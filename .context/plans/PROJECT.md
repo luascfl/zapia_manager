@@ -2,23 +2,24 @@
 
 ## Product
 
-A LibreWolf and Violentmonkey userscript that adds deliberate chat-labeling and bulk-management controls to Zapia Chat.
+A Tampermonkey/Violentmonkey userscript that adds deliberate chat-labeling, bulk-management and keyboard-shortcut controls to Zapia Chat.
 
 ## Scope
 
 - Target `https://app.zapia.com/chat` only.
-- Add `✔ ` and `🟡 ` prefixes to chat titles through Zapia’s visible edit interface.
+- Add configurable emoji prefixes (default `✔ ` and `🟡 `) to chat titles through Zapia’s visible edit interface.
 - Add per-chat selection checkboxes and a selected-count toolbar.
-- Start deletion only through each chat’s native delete controls. The script must never confirm Zapia’s final destructive dialog.
+- Delete through each chat’s native menu and confirm only inside Zapia’s own `Excluir conversa?` dialog, one chat at a time (changed on 2026-09-17 at the user’s request; it previously stopped at the dialog).
+- Act on the current chat through configurable shortcuts (defaults `Alt+Shift+C`, `Alt+Shift+Y`, `Alt+Shift+X`).
 - Remain responsive to Zapia SPA updates through a `MutationObserver`.
 
 ## Safety boundaries
 
 - No direct API calls, hidden endpoints, or data scraping.
-- No coordinate automation, fixed-delay logic, or synthetic final confirmation.
-- The selection UI does not itself delete data. Each selected chat must reach Zapia’s native deletion dialog.
+- No coordinate automation or fixed-delay logic. Native menu actions are matched by exact label, never free text.
+- Final confirmation is scoped to the visible native delete dialog, never to a menu item.
 
 ## Runtime
 
-- LibreWolf with the Violentmonkey extension.
+- Chrome or LibreWolf with Tampermonkey or Violentmonkey.
 - Plain JavaScript user script, no build step or external dependencies.

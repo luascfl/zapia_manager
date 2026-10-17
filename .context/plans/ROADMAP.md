@@ -19,3 +19,11 @@ Add selectable chat rows and an accessible bulk toolbar that only opens Zapia’
 Dependency: Phase 2 and an authenticated LibreWolf Zapia session.
 
 Install the script in Violentmonkey, exercise labels and selection in Zapia, then capture observed selectors and regressions.
+
+## Milestone 2: Reliable current-chat actions
+
+Dependency: Milestone 1.
+
+- US-002 (done): keep navigation banners such as `Ganhe o Zapia Pro de graça` out of the chat list.
+- US-003: keep the manager panel from covering Zapia’s native chat menu.
+- US-004: find why a shortcut sometimes opens a chat link (blocked on a repro).

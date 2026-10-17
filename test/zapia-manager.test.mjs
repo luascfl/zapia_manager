@@ -52,6 +52,12 @@ test('native menu actions match only their exact label, never link text', () => 
   assert.equal(manager.MENU_DELETE_ACTION.test('Como remover ou excluir inscrição'), false);
 });
 
+test('the Zapia Pro promo banner is navigation, not a chat row', () => {
+  assert.equal(manager.isNavigationActionLabel('Ganhe o Zapia Pro de graça'), true);
+  assert.equal(manager.isNavigationActionLabel('Ganhe o Zapia Pro de graça Nova função disponível'), true);
+  assert.equal(manager.isNavigationActionLabel('Ganhe tempo com o Zapia Pro'), false);
+});
+
 test('normalization supports text from browser controls', () => {
   assert.equal(manager.normalizeSpace('  Excluir\n chat  '), 'Excluir chat');
 });

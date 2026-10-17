@@ -148,3 +148,11 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Alt+C (synthetic and trusted CDP key events) in 5 chats clicked only `Mais ações` then `Renomear`; no `window.open`, no new tab, no route change. The final `Renomear` click was blocked by a spy, so no chat was renamed.
 - Not reproduced: message bodies did not render in this Chrome (empty canvas), so the user's case with a link in the message area remains unconfirmed. The anchored-label fix in 0.2.26 stays as hardening.
 - Verified defects seen along the way: the sidebar promo `Ganhe o Zapia Pro de graça` is listed as a chat in the manager panel, and the manager panel sits exactly where Zapia's native chat menu opens (top right), hiding it.
+
+## Milestone 2 bootstrap and US-002, 2026-10-17
+
+- Layout check (`workflow_stack layout`) was clean: no legacy dirs. `pick_story` found no open story (US-001 passed), so Milestone 2 was added to `ROADMAP.md` with US-002..US-004 in `prd.json`. US-001 acceptance criteria were rewritten to match reality (configurable emojis and chords, confirmed native deletion).
+- US-002 done in 0.2.27: `Ganhe o Zapia Pro de graça` (with or without `Nova função disponível`) is treated as navigation by `isNavigationActionLabel` and by the viewport-top calculation. A look-alike chat title (`Ganhe tempo com o Zapia Pro`) stays a chat. Evidence: `node --check`, 17 Node tests pass; live authenticated Chrome (source injected over CDP) showed the banner in the sidebar and 8 real chats, no banner, in the panel list.
+- Stale statements that the script never confirms deletion were fixed in `PROJECT.md`, `ROADMAP.md`, `workflow/README.md`, `docs/project-overview.md` and `docs/testing-strategy.md`. `phase-1/PLAN.md` is historical and unchanged.
+- Skill: CDP testing playbook for Flutter SPAs added to the `browser-automation` hub as `references/flutter-canvas-spa-cdp-testing.md`.
+- Next: US-003 (panel covers the native chat menu). US-004 stays blocked on a user repro.

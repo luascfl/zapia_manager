@@ -1,24 +1,63 @@
 {
   "project": "zapia-manager",
-  "description": "A safe LibreWolf Violentmonkey user script for Zapia Chat labels and guarded bulk management.",
+  "description": "A Tampermonkey/Violentmonkey user script for Zapia Chat: managed title prefixes, guarded bulk and current-chat actions, configurable shortcuts.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Manage Zapia chats with labels and guarded bulk deletion",
-      "description": "As a Zapia user, I can manage selected visible chats in bulk and act on the current chat through keyboard shortcuts.",
+      "title": "Manage Zapia chats with labels, deletion and keyboard shortcuts",
+      "description": "As a Zapia user, I can prefix and delete selected visible chats in bulk and act on the current chat through configurable keyboard shortcuts.",
       "acceptanceCriteria": [
         "Targets https://app.zapia.com/chat only.",
-        "Adds accessible ✔ and 🟡 prefix actions without stacking or duplicating managed prefixes.",
-        "Provides a separate accessible side panel for selecting visible chats, without covering Canvas chat titles, and collapses it into an unobtrusive launcher.",
-        "Deletion opens and confirms Zapia's native flow one selected chat at a time.",
-        "Deletion confirmation is scoped to the visible native `Excluir conversa?` dialog, never a menu action.",
-        "`Alt+Shift+C`, `Alt+Shift+Y`, and `Alt+Shift+X` respectively prefix the current chat with ✔, prefix it with 🟡, and delete it.",
+        "Adds ✔ and 🟡 prefix actions without stacking or duplicating managed prefixes; both emojis are configurable.",
+        "Provides a separate side panel for selecting visible chats and collapses it into a launcher.",
+        "Deletion opens Zapia's native flow and confirms it only inside the visible `Excluir conversa?` dialog, one chat at a time.",
+        "Defaults `Alt+Shift+C`, `Alt+Shift+Y` and `Alt+Shift+X` prefix with ✔, prefix with 🟡 and delete the current chat; the settings dialog captures and validates new chords.",
         "Shortcuts do not intercept typing or repeated keydown events.",
-        "Tests cover prefix replacement, row discovery, selection, native-delete exclusions, and keyboard chord recognition."
+        "Native menu actions are matched by exact label (`Renomear`/`Excluir`), never by free text.",
+        "Tests cover prefix replacement, row discovery, selection, native-delete exclusions, chord parsing and validation."
       ],
       "priority": "high",
       "passes": true,
-      "notes": "Version 0.2.15 displays the current-chat shortcuts in the manager header: `✔ (Alt+Shift+C)`, `🟡 (Alt+Shift+Y)`, and `excluir (Alt+Shift+X)`. An authenticated visual probe confirmed that exact compact hint in the visible panel. The installed Tampermonkey source is 0.2.15; Node syntax and 13 tests passed."
+      "notes": "Delivered through 0.2.26; 16 Node tests passed at that point."
+    },
+    {
+      "id": "US-002",
+      "title": "Exclude Zapia navigation banners from the manager chat list",
+      "description": "As a Zapia user, I only see real chats in the manager panel, so no panel action can click a promo or navigation banner.",
+      "acceptanceCriteria": [
+        "`Ganhe o Zapia Pro de graça` (with or without its `Nova função disponível` suffix) is never listed as a chat.",
+        "The chat viewport starts below that banner.",
+        "A similarly worded chat title such as `Ganhe tempo com o Zapia Pro` is still treated as a chat.",
+        "Live Chrome check: the banner is present in the sidebar and absent from the panel list."
+      ],
+      "priority": "high",
+      "passes": true,
+      "notes": "0.2.27 adds PROMO_NAVIGATION_PATTERN to isNavigationActionLabel and to the viewport top calculation. 17 Node tests pass. Live check in the authenticated automation Chrome: sidebar text still contained the banner, panel list showed 8 real chats and no banner."
+    },
+    {
+      "id": "US-003",
+      "title": "Keep the manager panel from covering Zapia's native chat menu",
+      "description": "As a Zapia user, the native `Informações do chat / Renomear / Fixar / Reportar / Excluir` menu stays visible when it opens.",
+      "acceptanceCriteria": [
+        "While the native menu is open, the panel does not overlap its area (top right under the header action).",
+        "The panel position is restored when the menu closes.",
+        "Verified visually in the authenticated Chrome with a screenshot."
+      ],
+      "priority": "medium",
+      "passes": false,
+      "notes": "Defect seen in a screenshot on 2026-10-17: the panel sits at inset 72px 16px, exactly where the native menu opens."
+    },
+    {
+      "id": "US-004",
+      "title": "Find why a shortcut sometimes opens a chat link",
+      "description": "As a Zapia user, pressing a current-chat shortcut never opens a link from the chat.",
+      "acceptanceCriteria": [
+        "Reproduce in a chat whose message area contains a link, or prove the script cannot trigger it.",
+        "Fix the root cause, with a regression test when it is testable outside the browser."
+      ],
+      "priority": "medium",
+      "passes": false,
+      "notes": "Blocked on a repro. 15 chats exposed one `Mais ações` and no link nodes; Alt+C produced only `Mais ações` then `Renomear` clicks. Message bodies do not render in the automation Chrome. Needs from the user: which shortcut, link domain, same or new tab, mouse position."
     }
   ]
 }

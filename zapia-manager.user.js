@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.2.26
+// @version      0.2.27
 // @description  Manage visible Zapia chats, native actions, shortcuts, and dynamic browser tab titles.
 // @match        https://app.zapia.com/chat*
 // @match        https://app.zapia.com/chat/*
@@ -53,6 +53,7 @@
     'Compartilhe e ganhe',
     'Indique e ganhe',
   ]);
+  const PROMO_NAVIGATION_PATTERN = /^ganhe o zapia pro\b/i;
 
   const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/u;
   const MENU_BUTTON_PATTERN = /^(?:menu|more|options|opções|mais ações|actions)$/i;
@@ -85,6 +86,7 @@
 
     if (
       NAVIGATION_ACTION_LABELS.has(normalized)
+      || PROMO_NAVIGATION_PATTERN.test(normalized)
       || /^Radar(?:\s+\d+)?$/u.test(normalized)
     ) {
       return true;
@@ -435,6 +437,7 @@
 
       if (
         PRIMARY_NAVIGATION_LABELS.has(label)
+        || PROMO_NAVIGATION_PATTERN.test(label)
         || /^Radar(?:\s+\d+)?$/u.test(label)
       ) {
         return Math.max(

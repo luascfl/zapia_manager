@@ -31,4 +31,4 @@ Use a logged-in Zapia account in a browser with a userscript manager:
 5. Confirm or cancel that dialog manually. For a destructive acceptance test, use a chat created solely for testing.
 6. Reload the page and verify the controls appear without manually enabling accessibility and never repeatedly re-render.
 
-On 2026-09-06, a connected authenticated Chrome session verified prefixing `teste` to `✔ teste`, checkbox selection, the native dialog, and final deletion of that user-created test chat. The script never clicks the final deletion control itself.
+On 2026-09-06, a connected authenticated Chrome session verified prefixing `teste` to `✔ teste`, checkbox selection, the native dialog, and final deletion of that user-created test chat. Since 0.2.11 the script itself confirms the native dialog; automated checks avoid that step on real chats by blocking the final `Renomear`/`Excluir` clicks with a spy.
