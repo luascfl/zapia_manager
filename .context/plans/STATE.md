@@ -2,11 +2,11 @@
 
 ## Active milestone
 
-Milestone 5, production English UI, freely scrollable non-blocking minimized panel, inline catalogue search with clear button, and distraction-free row hover, completed in version 0.5.9.
+Milestone 5, production English UI, continuous uninterrupted catalogue scrolling, freely scrollable non-blocking minimized panel, inline catalogue search with clear button, and distraction-free row hover, completed in version 0.5.10.
 
 ## Active story
 
-US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; bypassed automatic `scrollSidebarToTop` in layout sync while minimized so user can scroll native sidebar freely; added inline catalogue search triggered by `🔍` which replaces filter chips with an inline text input, filters catalogue results live inside the Manager panel with case/accent insensitivity, transforms the button to `×` for instant query reset and closure; resolved visual spacing in header between title and loading/summary status; removed distracting native browser `title` hover tooltips on chat row titles while preserving `aria-label`; release version 0.5.9.
+US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; bypassed automatic `scrollSidebarToTop` in layout sync while minimized so user can scroll native sidebar freely; added state equality guard (`panel.dataset.zapiaManagerState === state`) in `renderManagerPanel` so periodic background sync loops (`syncLoop`, `mountControls`, `scheduleMount`) never rebuild the DOM or replace the `.zapia-manager-chat-list` node when state has not changed, eliminating sudden scroll stutter and interruptions; added inline catalogue search triggered by `🔍` which replaces filter chips with an inline text input, filters catalogue results live inside the Manager panel with case/accent insensitivity, transforms the button to `×` for instant query reset and closure; resolved visual spacing in header between title and loading/summary status; removed distracting native browser `title` hover tooltips on chat row titles while preserving `aria-label`; release version 0.5.10.
 ## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.
@@ -20,14 +20,13 @@ US-008 completed: full English public UI localization (headers, settings dialog,
 - `graphify update .` rebuilt `.context/graphify-out` with 30 nodes and 56 edges.
 - LibreWolf 142.0.1 and an enabled Violentmonkey extension are present in the default profile.
 
-## Versão 0.5.9: Liberação da rolagem nativa com painel minimizado
+## Versão 0.5.10: Estabilização de rolagem contínua no catálogo do painel
 
-- Ajustada a rotina periódica `syncNativeSidebarLayout`: a verificação que força o retorno da navegação nativa ao topo (`scrollSidebarToTop`) agora é ignorada enquanto o painel estiver minimizado (`!preferences.panel.minimized`).
-- O usuário agora pode rolar a barra lateral nativa do Zapia livremente quando o Manager estiver colapsado no botão `+`.
-- Ao expandir novamente (`-`), o Manager restaura normalmente seu catálogo completo com rolagem interna isolada e sincronizada.
-- Versão do userscript e export de runtime unificados em `0.5.9`.
+- Identificada a causa da parada repentina do scroll: o loop de sincronização periódico (`syncLoop` a cada 500ms e `scheduleMount` via `MutationObserver`) executava `renderManagerPanel()` incondicionalmente, recriando o elemento `.zapia-manager-chat-list` via `panel.replaceChildren()`. Essa substituição destruía o momentum físico de rolagem do navegador no meio do gesto do usuário.
+- Adicionada proteção de igualdade de estado serializado (`panel.dataset.zapiaManagerState === state`) antes de qualquer recriação do DOM no painel. Chamadas periódicas sem alteração de preferências, filtros, busca, escaneamento ou seleção retornam imediatamente sem tocar nos nós do DOM.
+- Versão do userscript e export de runtime unificados em `0.5.10`.
 - 34 testes automatizados Node executados e aprovados.
-- Hot reload via CDP e smoke test autenticado com evento real de rolagem (`mouseWheel`) confirmaram que as linhas da barra nativa do Zapia rolam normalmente e a expansão do Manager restaura o catálogo completo.
+- Hot reload via CDP e teste de rolagem contínua confirmaram que o elemento `.zapia-manager-chat-list` permanece o mesmo (`sameNode: true`) durante toda a rolagem sucessiva e que a posição `scrollTop` progride de forma fluida sem interrupções.
 - 34 testes automatizados Node executados e aprovados.
 - Hot reload via CDP e inspeção no Chrome confirmaram ausência de atributo `title` nas linhas de chat e integridade dos demais controles.
 
