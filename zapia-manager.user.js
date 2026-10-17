@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.6
+// @version      0.5.7
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -2229,7 +2229,7 @@
     summary.textContent = chatScanRunning ? 'Loading…'
       : selectedChatIds.size ? `${selectedChatIds.size} selected`
         : activeFilters.size || preferences.view.onlyUnprefixed || catalogueSearchQuery ? `${chats.length} of ${knownChats.length}` : String(knownChats.length);
-    headingCopy.append(title, summary);
+    headingCopy.append(title, document.createTextNode(' '), summary);
     const headingActions = document.createElement('div');
     headingActions.className = 'zapia-manager-panel-heading-actions';
     const settings = button('⚙', 'Configure emojis and shortcuts', configurePreferences);
@@ -2542,6 +2542,9 @@
       .zapia-manager-sidebar.is-minimized .zapia-manager-settings-trigger { display: none; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading-actions,
       .zapia-manager-sidebar.is-minimized .zapia-manager-minimize-trigger { pointer-events: auto !important; }
+      .zapia-manager-panel-heading-copy { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+      .zapia-manager-panel-heading-copy strong { font-size: 13px; font-weight: 600; color: #f2f3f3; }
+      .zapia-manager-panel-heading-copy span { font-size: 11px; color: #a4abaa; }
       .zapia-manager-panel-heading { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; }
       .zapia-manager-filters { flex: 0 0 auto; display: flex; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid #292b2b; }
       .zapia-manager-button { border: 1px solid #373b3b; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font: inherit; min-block-size: 28px; padding: 4px 7px; pointer-events: auto !important; }
@@ -2624,7 +2627,7 @@
   }
 
   window.__zapiaManager = Object.freeze({
-    version: '0.5.6',
+    version: '0.5.7',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
