@@ -411,9 +411,9 @@ test('isUnavailableChatError recognizes header timeout and render failures but r
 test('safeProfileTop preserves observed profile top but reserves a safe bottom gutter', () => {
   // Profile discovered near bottom (e.g., 720px in an 820px window)
   assert.equal(manager.safeProfileTop(720, 820), 720);
-  // Profile missing or returned full window height: clamped by safe gutter (820 - 96 = 724)
-  assert.equal(manager.safeProfileTop(820, 820), 724);
-  assert.equal(manager.safeProfileTop(undefined, 820), 724);
+  // Profile missing or returned full window height: clamped by safe gutter (820 - 80 = 740)
+  assert.equal(manager.safeProfileTop(820, 820), 740);
+  assert.equal(manager.safeProfileTop(undefined, 820), 740);
   // Degenerate zero or negative height
   assert.equal(manager.safeProfileTop(500, 0), 0);
 });

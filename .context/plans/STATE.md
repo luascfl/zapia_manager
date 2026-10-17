@@ -220,3 +220,10 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Correção: declaração restaurada, versão 0.5.16 no cabeçalho e no export de runtime.
 - Evidências: no Chrome autenticado, antes da correção o clique não criou `dialog.zapia-manager-settings`. Depois: o diálogo abre com título e cinco campos, Cancel fecha sem alterar `zapia_manager_preferences_v1`, Save com valores iguais fecha e mantém as preferências idênticas; captura visual conferida e removida. `node --check` e 40 testes passaram. Tampermonkey Beta salvou 0.5.16 e o dashboard recarregado mostra 0.5.16.
 - Varredura `eslint no-undef` no arquivo todo: só globais legítimas do navegador, nenhum outro identificador indefinido. Sem teste permanente: `configurePreferences` depende de DOM e não é exportada.
+
+## Faixa nativa sob o painel, 0.5.17, 2026-10-17
+
+- Problema relatado com print: o card nativo do chat aparecia numa faixa entre o fim do painel e a barra do perfil. Reproduzido: painel terminava em y=726 (limite fixo de 96px da 0.5.14), a barra do perfil começa em y≈743, faixa de ~17px.
+- Medição: o nó semântico do perfil fica em y=763..803, centrado numa barra de ~80px, então o topo da barra é o topo do nó menos 20px. Os nós nativos de chat terminam em y≈742.
+- Correção: `PROFILE_BAR_PADDING = 20` aplicado ao topo detectado, folga mínima `PROFILE_SAFE_BOTTOM_GUTTER` de 96 para 80 e `max-height: calc(100vh - 80px)`. Com o nó do perfil reciclado, o painel ainda para 80px acima do fundo, sem cobrir o perfil. O teste `safeProfileTop` foi atualizado para 740 (820 - 80).
+- Evidências: painel termina em 742, topo esperado da barra 742,67; captura mostra a lista indo até a barra do perfil, sem faixa e com o perfil inteiro visível. `node --check` e 40 testes passaram. Tampermonkey Beta salvou 0.5.17 e o dashboard recarregado mostra 0.5.17. Capturas temporárias removidas.

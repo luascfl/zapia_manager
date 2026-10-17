@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.16
+// @version      0.5.17
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -74,7 +74,8 @@
   let catalogueSearchOpen = false;
   let catalogueSearchQuery = '';
   const HEADER_CLIP_TOP = 50;
-  const PROFILE_SAFE_BOTTOM_GUTTER = 96;
+  const PROFILE_SAFE_BOTTOM_GUTTER = 80;
+  const PROFILE_BAR_PADDING = 20;
   let observerScheduled = false;
   let settingsOpen = false;
 
@@ -742,7 +743,7 @@
         rect.left > navRect.left + 5
         && EMAIL_PATTERN.test(label)
       ) {
-        return Math.min(top, rect.top);
+        return Math.min(top, rect.top - PROFILE_BAR_PADDING);
       }
 
       return top;
@@ -2697,7 +2698,7 @@
       .zapia-manager-sidebar {
         position: fixed; z-index: 2147483647 !important; box-sizing: border-box;
         display: flex; flex-direction: column; overflow: hidden;
-        left: 0; top: 0; width: 280px; max-height: calc(100vh - 96px);
+        left: 0; top: 0; width: 280px; max-height: calc(100vh - 80px);
         border: 0; border-right: 1px solid #272929; border-radius: 0;
         background: #181919; color: #f2f3f3;
         font: 13px/1.35 Inter, system-ui, sans-serif; pointer-events: auto !important;
@@ -2798,7 +2799,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.16',
+    version: '0.5.17',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
