@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.12
+// @version      0.5.14
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -74,6 +74,7 @@
   let catalogueSearchOpen = false;
   let catalogueSearchQuery = '';
   const HEADER_CLIP_TOP = 50;
+  const PROFILE_SAFE_BOTTOM_GUTTER = 96;
   let observerScheduled = false;
   let settingsOpen = false;
 
@@ -217,7 +218,9 @@
   }
 
   function isUnavailableChatError(error) {
-    return error?.message === 'Zapia did not expose the selected chat header.';
+    const message = error?.message ?? '';
+    return message === 'Zapia did not expose the selected chat header.'
+      || message.startsWith('Zapia did not render chat ');
   }
 
   function pinnedBetweenSections(position, start, end) {
@@ -467,6 +470,29 @@
     return null;
   }
 
+  function safeProfileTop(detectedProfileTop, height, gutter = PROFILE_SAFE_BOTTOM_GUTTER) {
+    if (!Number.isFinite(height) || height <= 0) return 0;
+    const detectedTop = Number.isFinite(detectedProfileTop) ? detectedProfileTop : height;
+    return Math.min(detectedTop, Math.max(0, height - gutter));
+  }
+
+  function pointInChatViewport(viewport, clientX, clientY) {
+    const rect = viewport?.navRect;
+    return Boolean(
+      rect
+      && Number.isFinite(clientX)
+      && Number.isFinite(clientY)
+      && Number.isFinite(rect.left)
+      && Number.isFinite(rect.right)
+      && Number.isFinite(rect.top)
+      && Number.isFinite(viewport.bottom)
+      && clientX >= rect.left
+      && clientX < rect.right
+      && clientY >= rect.top
+      && clientY < viewport.bottom,
+    );
+  }
+
   function sidebarPlacement(nav, topOffset, profileTop, width, height) {
     if (!nav || topOffset === null || nav.left < 0 || nav.right > width || nav.width <= 0) return null;
     const top = Math.max(0, nav.top + topOffset);
@@ -489,6 +515,8 @@
     isMenuButtonLabel,
     isNavigationActionLabel,
     sidebarPlacement,
+    safeProfileTop,
+    pointInChatViewport,
     rectanglesOverlap,
     selectRootChatRows,
     cleanChatTitle,
@@ -693,7 +721,7 @@
       return bottom;
     }, HEADER_CLIP_TOP);
 
-    const profileTop = buttons.reduce((top, button) => {
+    const detectedProfileTop = buttons.reduce((top, button) => {
       const rect = button.getBoundingClientRect();
 
       const label = normalizeSpace(
@@ -711,12 +739,13 @@
 
       return top;
     }, window.innerHeight);
+    const profileTop = safeProfileTop(detectedProfileTop, window.innerHeight);
 
     return {
       nav,
       navRect,
       top: Math.max(HEADER_CLIP_TOP, primaryBottom),
-      bottom: Math.min(window.innerHeight, profileTop),
+      bottom: profileTop,
     };
   }
 
@@ -2575,9 +2604,8 @@
     document.addEventListener('wheel', (event) => {
       if (!event.isTrusted || event.target?.closest?.('[data-zapia-manager-control]')) return;
       const panel = document.querySelector('.zapia-manager-sidebar:not(.is-sidebar-hidden):not(.is-minimized)');
-      if (panel && viewport && event.clientX >= viewport.navRect.left
-        && event.clientX < viewport.navRect.right && event.clientY >= viewport.navRect.top
-        && event.clientY < viewport.bottom) {
+      const viewport = getChatViewport();
+      if (panel && pointInChatViewport(viewport, event.clientX, event.clientY)) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
@@ -2653,6 +2681,7 @@
       .zapia-manager-sidebar {
         position: fixed; z-index: 2147483647 !important; box-sizing: border-box;
         display: flex; flex-direction: column; overflow: hidden;
+        left: 0; top: 0; width: 280px; max-height: calc(100vh - 96px);
         border: 0; border-right: 1px solid #272929; border-radius: 0;
         background: #181919; color: #f2f3f3;
         font: 13px/1.35 Inter, system-ui, sans-serif; pointer-events: auto !important;
@@ -2753,7 +2782,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.12',
+    version: '0.5.14',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

@@ -388,9 +388,13 @@ test('buildSupportDiagnosticPayload creates structured, privacy-safe report for 
   assert.ok(payload.instructions.includes('Zapia support'));
 });
 
-test('isUnavailableChatError recognizes header timeout but rejects generic errors', () => {
+test('isUnavailableChatError recognizes header timeout and render failures but rejects generic errors', () => {
   assert.equal(
     manager.isUnavailableChatError(new Error('Zapia did not expose the selected chat header.')),
+    true,
+  );
+  assert.equal(
+    manager.isUnavailableChatError(new Error('Zapia did not render chat text:test chat id.')),
     true,
   );
   assert.equal(
@@ -402,4 +406,27 @@ test('isUnavailableChatError recognizes header timeout but rejects generic error
     false,
   );
   assert.equal(manager.isUnavailableChatError(null), false);
+});
+
+test('safeProfileTop preserves observed profile top but reserves a safe bottom gutter', () => {
+  // Profile discovered near bottom (e.g., 720px in an 820px window)
+  assert.equal(manager.safeProfileTop(720, 820), 720);
+  // Profile missing or returned full window height: clamped by safe gutter (820 - 96 = 724)
+  assert.equal(manager.safeProfileTop(820, 820), 724);
+  assert.equal(manager.safeProfileTop(undefined, 820), 724);
+  // Degenerate zero or negative height
+  assert.equal(manager.safeProfileTop(500, 0), 0);
+});
+
+test('pointInChatViewport safely handles missing viewport or points outside', () => {
+  assert.equal(manager.pointInChatViewport(null, 50, 100), false);
+  assert.equal(manager.pointInChatViewport({}, 50, 100), false);
+  const vp = {
+    navRect: { left: 0, right: 280, top: 0 },
+    bottom: 720,
+  };
+  assert.equal(manager.pointInChatViewport(vp, 100, 300), true);
+  assert.equal(manager.pointInChatViewport(vp, 300, 300), false); // outside right
+  assert.equal(manager.pointInChatViewport(vp, 100, 750), false); // outside bottom
+  assert.equal(manager.pointInChatViewport(vp, NaN, 300), false);
 });
