@@ -213,3 +213,10 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Clique ainda sem âncora: `visibleSaveAction` recorre a qualquer botão semântico com rótulo exato Salvar, Save, Confirmar, Confirm ou OK.
 - Acidente no repro: um `Alt+C` sem bloqueio renomeou o chat de produção `🟡 Resumos de grupos do Whatsapp` para `✔ ...`. Foi revertido com `Alt+V` e o título original foi confirmado. Nas execuções seguintes o spy bloqueia o salvar final.
 - Evidências: `node --check` e 40 testes Node passaram (novo teste de `isChatHeaderControl`). O Tampermonkey Beta salvou a 0.5.15 e o dashboard recarregado mostra 0.5.15. Uma página nova de `app.zapia.com/chat`, sem injeção, carregou a 0.5.15 com um painel e um estilo.
+
+## Botão de configuração, 0.5.16, 2026-10-17
+
+- Problema relatado pelo usuário: o botão ⚙ não abria nada. Causa: o commit `9f318a9` (localização em inglês) removeu a linha `const title = document.createElement('h2')` de `configurePreferences`, então o clique lançava `ReferenceError: title is not defined` dentro do handler e o diálogo nunca abria.
+- Correção: declaração restaurada, versão 0.5.16 no cabeçalho e no export de runtime.
+- Evidências: no Chrome autenticado, antes da correção o clique não criou `dialog.zapia-manager-settings`. Depois: o diálogo abre com título e cinco campos, Cancel fecha sem alterar `zapia_manager_preferences_v1`, Save com valores iguais fecha e mantém as preferências idênticas; captura visual conferida e removida. `node --check` e 40 testes passaram. Tampermonkey Beta salvou 0.5.16 e o dashboard recarregado mostra 0.5.16.
+- Varredura `eslint no-undef` no arquivo todo: só globais legítimas do navegador, nenhum outro identificador indefinido. Sem teste permanente: `configurePreferences` depende de DOM e não é exportada.

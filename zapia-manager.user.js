@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.15
+// @version      0.5.16
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -1636,6 +1636,7 @@
     dialog.dataset.zapiaManagerControl = 'true';
     protectManagedSurface(dialog);
 
+    const title = document.createElement('h2');
     title.textContent = 'Configure emojis and shortcuts';
 
     const fields = document.createElement('div');
@@ -2797,7 +2798,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.15',
+    version: '0.5.16',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
