@@ -2,11 +2,11 @@
 
 ## Active milestone
 
-Milestone 5, production English UI, non-blocking minimized panel, inline catalogue search with clear button, and distraction-free row hover, completed in version 0.5.8.
+Milestone 5, production English UI, freely scrollable non-blocking minimized panel, inline catalogue search with clear button, and distraction-free row hover, completed in version 0.5.9.
 
 ## Active story
 
-US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; added inline catalogue search triggered by `🔍` which replaces filter chips with an inline text input, filters catalogue results live inside the Manager panel with case/accent insensitivity, transforms the button to `×` for instant query reset and closure; resolved visual spacing in header between title and loading/summary status; removed distracting native browser `title` hover tooltips on chat row titles while preserving `aria-label`; release version 0.5.8.
+US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; bypassed automatic `scrollSidebarToTop` in layout sync while minimized so user can scroll native sidebar freely; added inline catalogue search triggered by `🔍` which replaces filter chips with an inline text input, filters catalogue results live inside the Manager panel with case/accent insensitivity, transforms the button to `×` for instant query reset and closure; resolved visual spacing in header between title and loading/summary status; removed distracting native browser `title` hover tooltips on chat row titles while preserving `aria-label`; release version 0.5.9.
 ## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.
@@ -20,12 +20,14 @@ US-008 completed: full English public UI localization (headers, settings dialog,
 - `graphify update .` rebuilt `.context/graphify-out` with 30 nodes and 56 edges.
 - LibreWolf 142.0.1 and an enabled Violentmonkey extension are present in the default profile.
 
-## Versão 0.5.8: Remoção do tooltip nativo de hover nas linhas de chat
+## Versão 0.5.9: Liberação da rolagem nativa com painel minimizado
 
-- Removido o atributo `title` ("Open [nome do chat]") nos botões das linhas de conversa (`.zapia-manager-chat-title`), eliminando o popup flutuante distrativo ao passar o mouse.
-- Mantido o `aria-label` nos botões para preservar acessibilidade por leitores de tela sem disparar hover visual do navegador.
-- Demais botões (engrenagem de preferências, minimizar/expandir, filtros, ações em lote e menu de opções da linha `⋯`) mantêm seus tooltips informativos inalterados.
-- Versão do userscript e export de runtime unificados em `0.5.8`.
+- Ajustada a rotina periódica `syncNativeSidebarLayout`: a verificação que força o retorno da navegação nativa ao topo (`scrollSidebarToTop`) agora é ignorada enquanto o painel estiver minimizado (`!preferences.panel.minimized`).
+- O usuário agora pode rolar a barra lateral nativa do Zapia livremente quando o Manager estiver colapsado no botão `+`.
+- Ao expandir novamente (`-`), o Manager restaura normalmente seu catálogo completo com rolagem interna isolada e sincronizada.
+- Versão do userscript e export de runtime unificados em `0.5.9`.
+- 34 testes automatizados Node executados e aprovados.
+- Hot reload via CDP e smoke test autenticado com evento real de rolagem (`mouseWheel`) confirmaram que as linhas da barra nativa do Zapia rolam normalmente e a expansão do Manager restaura o catálogo completo.
 - 34 testes automatizados Node executados e aprovados.
 - Hot reload via CDP e inspeção no Chrome confirmaram ausência de atributo `title` nas linhas de chat e integridade dos demais controles.
 

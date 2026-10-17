@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.8
+// @version      0.5.9
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -2440,9 +2440,8 @@
         if (panel.style[name] !== value) panel.style[name] = value;
       }
     }
-    if (viewport && !nativeNavigationAtHome(viewport) && !nativeEntry && !isRadarOverlayOpen()
+    if (viewport && !preferences.panel.minimized && !nativeNavigationAtHome(viewport) && !nativeEntry && !isRadarOverlayOpen()
       && !sidebarHomePending && !chatScanRunning && !chatActionDepth) {
-      sidebarHomePending = true;
       void scrollSidebarToTop().catch((error) => toast(error.message, 'error')).finally(() => {
         sidebarHomePending = false;
         if (!lifetime.signal.aborted) syncNativeSidebarLayout();
@@ -2628,7 +2627,7 @@
   }
 
   window.__zapiaManager = Object.freeze({
-    version: '0.5.8',
+    version: '0.5.9',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
