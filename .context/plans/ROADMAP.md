@@ -25,5 +25,5 @@ Install the script in Violentmonkey, exercise labels and selection in Zapia, the
 Dependency: Milestone 1.
 
 - US-002 (done): keep navigation banners such as `Ganhe o Zapia Pro de graça` out of the chat list.
-- US-003: keep the manager panel from covering Zapia’s native chat menu.
+- US-003 (done): keep the manager panel from covering Zapia’s native chat menu.
 - US-004: find why a shortcut sometimes opens a chat link (blocked on a repro).

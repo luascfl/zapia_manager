@@ -44,8 +44,8 @@
         "Verified visually in the authenticated Chrome with a screenshot."
       ],
       "priority": "medium",
-      "passes": false,
-      "notes": "Defect seen in a screenshot on 2026-10-17: the panel sits at inset 72px 16px, exactly where the native menu opens."
+      "passes": true,
+      "notes": "0.2.28 hides the panel (visibility hidden, pointer-events none) while an exact `Renomear` item inside a role=group node exists, and restores it when the menu closes. 18 Node tests pass. Live authenticated Chrome: real click on the header menu button showed the native menu fully visible with the panel hidden; a click outside closed it and the panel returned (visibility visible). Screenshots taken."
     },
     {
       "id": "US-004",
@@ -57,7 +57,7 @@
       ],
       "priority": "medium",
       "passes": false,
-      "notes": "Blocked on a repro. 15 chats exposed one `Mais ações` and no link nodes; Alt+C produced only `Mais ações` then `Renomear` clicks. Message bodies do not render in the automation Chrome. Needs from the user: which shortcut, link domain, same or new tab, mouse position."
+      "notes": "Blocked on a repro. 15 chats exposed one `Mais ações` and no link nodes; Alt+C produced only `Mais ações` then `Renomear` clicks. Message bodies do not render in the automation Chrome. Needs from the user: which shortcut, link domain, same or new tab, mouse position. Update 2026-10-17: messages now render in the automation Chrome and a chat with a link exists (`Abra o roteiro no Google Docs`, chat `[2] Capítulo de Larissa...`), so a repro attempt is possible."
     }
   ]
 }

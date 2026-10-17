@@ -1,11 +1,11 @@
 # Graph Report - zapia_manager  (2026-10-17)
 
 ## Corpus Check
-- 2 files · ~12,937 words
+- 2 files · ~13,025 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 81 nodes · 167 edges · 12 communities detected
+- 83 nodes · 172 edges · 11 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
@@ -21,31 +21,30 @@
 - [[_COMMUNITY_Community 8|Community 8]]
 - [[_COMMUNITY_Community 9|Community 9]]
 - [[_COMMUNITY_Community 10|Community 10]]
-- [[_COMMUNITY_Community 11|Community 11]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `mountControls()` - 13 edges
+1. `mountControls()` - 14 edges
 2. `normalizeSpace()` - 10 edges
 3. `applyPrefix()` - 9 edges
 4. `waitFor()` - 7 edges
 5. `boot()` - 7 edges
 6. `deleteChat()` - 6 edges
 7. `renderManagerPanel()` - 6 edges
-8. `openNativeActions()` - 5 edges
-9. `queueFromSelection()` - 5 edges
-10. `deleteSelectedChats()` - 5 edges
+8. `semanticButtons()` - 5 edges
+9. `openNativeActions()` - 5 edges
+10. `queueFromSelection()` - 5 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `chatIdentity()` --calls--> `normalizeSpace()`  [EXTRACTED]
-  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 5 → community 3_
+  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 5 → community 1_
 - `semanticLabel()` --calls--> `normalizeSpace()`  [EXTRACTED]
-  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 5 → community 4_
+  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 5 → community 7_
 - `applyPrefix()` --calls--> `withPrefix()`  [EXTRACTED]
-  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 8 → community 1_
-- `shortcutValidationError()` --calls--> `shortcutLabel()`  [EXTRACTED]
-  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 3 → community 9_
+  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 9 → community 2_
 - `mountControls()` --calls--> `enableFlutterSemantics()`  [EXTRACTED]
-  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 4 → community 0_
+  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 6 → community 0_
+- `applyPrefix()` --calls--> `visibleSaveAction()`  [EXTRACTED]
+  zapia-manager.user.js → zapia-manager.user.js  _Bridges community 4 → community 2_
 
 ## Communities
 
@@ -54,61 +53,57 @@ Cohesion: 0.18
 Nodes (14): applyPrefixToSelectedChats(), discoverChatRows(), getChatViewport(), hasChatHoverAction(), hasFocusedTextEntry(), isEditableTarget(), isRadarOverlayOpen(), mountControls() (+6 more)
 
 ### Community 1 - "Community 1"
+Cohesion: 0.2
+Nodes (12): button(), chatIdentity(), cleanChatTitle(), configurePreferences(), describeRow(), getActiveChatTitleForBrowserTab(), isShortcut(), parseShortcut() (+4 more)
+
+### Community 2 - "Community 2"
 Cohesion: 0.31
 Nodes (11): applyPrefix(), deleteChat(), openCurrentNativeActions(), openNativeActions(), rediscoverAndApply(), rediscoverAndDelete(), rowMenuButton(), runCurrentChatShortcut() (+3 more)
 
-### Community 2 - "Community 2"
-Cohesion: 0.22
-Nodes (2): isVisible(), nativeRenameInput()
-
 ### Community 3 - "Community 3"
-Cohesion: 0.28
-Nodes (9): button(), chatIdentity(), cleanChatTitle(), configurePreferences(), describeRow(), getActiveChatTitleForBrowserTab(), renderManagerPanel(), shortcutLabel() (+1 more)
+Cohesion: 0.22
+Nodes (2): loadPreferences(), savePreferences()
 
 ### Community 4 - "Community 4"
 Cohesion: 0.22
-Nodes (9): boot(), detectRadarOverlay(), enableFlutterSemantics(), installBrowserTabTitleSync(), installKeyboardShortcuts(), installRadarProtection(), installStyles(), refreshRadarOverlayState() (+1 more)
+Nodes (9): hasNativeChatMenu(), semanticButton(), semanticButtons(), semanticMenuButton(), syncPanelWithNativeMenu(), visibleMenuAction(), visibleMenus(), visibleSaveAction() (+1 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.38
 Nodes (7): canActivateDeleteCandidate(), isFlutterChatRow(), isHoverActionLabel(), isMenuButtonLabel(), isNavigationActionLabel(), normalizeSpace(), radarTargetKind()
 
 ### Community 6 - "Community 6"
-Cohesion: 0.5
-Nodes (4): deleteSelectedChats(), nativeDeleteConfirmAction(), nativeDeleteDialog(), nativeDeleteDialogOpen()
+Cohesion: 0.4
+Nodes (5): boot(), enableFlutterSemantics(), installBrowserTabTitleSync(), installKeyboardShortcuts(), installStyles()
 
 ### Community 7 - "Community 7"
 Cohesion: 0.5
-Nodes (4): semanticButton(), semanticButtons(), semanticMenuButton(), visibleSaveAction()
+Nodes (4): detectRadarOverlay(), installRadarProtection(), refreshRadarOverlayState(), semanticLabel()
 
 ### Community 8 - "Community 8"
+Cohesion: 0.5
+Nodes (4): deleteSelectedChats(), nativeDeleteConfirmAction(), nativeDeleteDialog(), nativeDeleteDialogOpen()
+
+### Community 9 - "Community 9"
 Cohesion: 1.0
 Nodes (3): configuredPrefixes(), stripManagedPrefix(), withPrefix()
 
-### Community 9 - "Community 9"
-Cohesion: 0.67
-Nodes (3): isShortcut(), parseShortcut(), shortcutValidationError()
-
 ### Community 10 - "Community 10"
-Cohesion: 0.67
-Nodes (3): visibleMenuAction(), visibleMenus(), visibleSemanticMenuAction()
-
-### Community 11 - "Community 11"
 Cohesion: 1.0
-Nodes (2): loadPreferences(), savePreferences()
+Nodes (2): isVisible(), nativeRenameInput()
 
 ## Knowledge Gaps
-- **Thin community `Community 2`** (10 nodes): `currentChatShortcut()`, `isManagedNode()`, `isVisible()`, `zapia-manager.user.js`, `nativeRenameInput()`, `needsRemount()`, `requestZapiaCacheRecovery()`, `scheduleBrowserTabTitleSync()`, `scheduleMount()`, `shortcutFromEvent()`
+- **Thin community `Community 3`** (10 nodes): `currentChatShortcut()`, `isManagedNode()`, `zapia-manager.user.js`, `loadPreferences()`, `needsRemount()`, `requestZapiaCacheRecovery()`, `savePreferences()`, `scheduleBrowserTabTitleSync()`, `scheduleMount()`, `shortcutFromEvent()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 11`** (2 nodes): `loadPreferences()`, `savePreferences()`
+- **Thin community `Community 10`** (2 nodes): `isVisible()`, `nativeRenameInput()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `mountControls()` connect `Community 0` to `Community 2`, `Community 3`, `Community 4`, `Community 6`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
-- **Why does `normalizeSpace()` connect `Community 5` to `Community 2`, `Community 3`, `Community 4`?**
+- **Why does `mountControls()` connect `Community 0` to `Community 1`, `Community 3`, `Community 4`, `Community 6`, `Community 8`?**
+  _High betweenness centrality (0.011) - this node is a cross-community bridge._
+- **Why does `normalizeSpace()` connect `Community 5` to `Community 1`, `Community 3`, `Community 7`?**
   _High betweenness centrality (0.005) - this node is a cross-community bridge._
-- **Why does `applyPrefix()` connect `Community 1` to `Community 8`, `Community 2`, `Community 7`?**
-  _High betweenness centrality (0.004) - this node is a cross-community bridge._
+- **Why does `applyPrefix()` connect `Community 2` to `Community 9`, `Community 3`, `Community 4`?**
+  _High betweenness centrality (0.003) - this node is a cross-community bridge._

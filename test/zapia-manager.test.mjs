@@ -58,6 +58,12 @@ test('the Zapia Pro promo banner is navigation, not a chat row', () => {
   assert.equal(manager.isNavigationActionLabel('Ganhe tempo com o Zapia Pro'), false);
 });
 
+test('the native chat menu is detected only by an exact Renomear item inside a group', () => {
+  assert.equal(manager.hasNativeChatMenu([{ label: 'Renomear', parentRole: 'group' }]), true);
+  assert.equal(manager.hasNativeChatMenu([{ label: 'Renomear', parentRole: null }]), false);
+  assert.equal(manager.hasNativeChatMenu([{ label: 'Edital para renomear', parentRole: 'group' }]), false);
+});
+
 test('normalization supports text from browser controls', () => {
   assert.equal(manager.normalizeSpace('  Excluir\n chat  '), 'Excluir chat');
 });

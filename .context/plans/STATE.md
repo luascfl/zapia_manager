@@ -156,3 +156,9 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Stale statements that the script never confirms deletion were fixed in `PROJECT.md`, `ROADMAP.md`, `workflow/README.md`, `docs/project-overview.md` and `docs/testing-strategy.md`. `phase-1/PLAN.md` is historical and unchanged.
 - Skill: CDP testing playbook for Flutter SPAs added to the `browser-automation` hub as `references/flutter-canvas-spa-cdp-testing.md`.
 - Next: US-003 (panel covers the native chat menu). US-004 stays blocked on a user repro.
+
+## US-003 panel vs native menu, 2026-10-17
+
+- 0.2.28: `syncPanelWithNativeMenu` runs at the start of every `mountControls`; while `hasNativeChatMenu` finds an exact `Renomear` node whose parent has `role=group`, the panel gets `is-native-menu-open` (hidden, non-interactive). It is restored when the menu closes. Impact via Graphify: only `mountControls`, `semanticButtons`, `semanticLabel` are touched.
+- Evidence: `node --check`, 18 Node tests; live Chrome over CDP with a real mouse click on the header menu: menu fully visible and panel hidden (screenshot), then panel visible again after clicking outside (screenshot). Synthetic `Escape` does not close Zapia's popup; use a real click outside.
+- Observed for US-004: message bodies now render in the automation Chrome and one chat contains a link; a repro with the shortcut can be attempted next.

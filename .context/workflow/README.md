@@ -1,6 +1,6 @@
 # Ralph workflow
 
-The active milestone is Milestone 2 in `.context/plans/ROADMAP.md`. Next open story: `US-003` in `prd.json`. `US-004` is blocked on a user repro.
+The active milestone is Milestone 2 in `.context/plans/ROADMAP.md`. Next open story: `US-004` in `prd.json` (a repro may now be possible; see its notes).
 
 Definition of done for every story:
 

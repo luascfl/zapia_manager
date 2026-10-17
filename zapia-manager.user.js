@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.2.27
+// @version      0.2.28
 // @description  Manage visible Zapia chats, native actions, shortcuts, and dynamic browser tab titles.
 // @match        https://app.zapia.com/chat*
 // @match        https://app.zapia.com/chat/*
@@ -338,6 +338,7 @@
     isHoverActionLabel,
     isMenuButtonLabel,
     isNavigationActionLabel,
+    hasNativeChatMenu,
     selectRootChatRows,
     queueVisibleSelectedChatIds,
     isManagedNode,
@@ -1713,7 +1714,27 @@
     await deleteChat(row);
   }
 
+  function hasNativeChatMenu(entries) {
+    return entries.some(({ label, parentRole }) =>
+      parentRole === 'group' && MENU_RENAME_ACTION.test(label),
+    );
+  }
+
+  function syncPanelWithNativeMenu() {
+    const open = hasNativeChatMenu(
+      semanticButtons().map((element) => ({
+        label: semanticLabel(element),
+        parentRole: element.parentElement?.getAttribute('role'),
+      })),
+    );
+
+    document.querySelector('[data-zapia-manager-panel]')
+      ?.classList.toggle('is-native-menu-open', open);
+  }
+
   function mountControls() {
+    syncPanelWithNativeMenu();
+
     if (
       hasFocusedTextEntry()
       || isRadarOverlayOpen()
@@ -1816,6 +1837,11 @@
         color: #7f8d9c !important;
         font-size: 11px !important;
         line-height: 1.25;
+      }
+
+      .zapia-manager-panel.is-native-menu-open {
+        visibility: hidden;
+        pointer-events: none !important;
       }
 
       .zapia-manager-panel.is-collapsed {
