@@ -315,7 +315,7 @@ test('selected chats include reusable agents and titles require only confirmatio
   assert.doesNotThrow(() => manager.assertChatTitle('✔ Concluído'));
 });
 
-test('loadPreferences restores and validates view options', () => {
+test('loadPreferences restores view options and default panel state', () => {
   const custom = {
     prefixes: ['✅', '🟠'],
     shortcuts: {
@@ -333,4 +333,10 @@ test('loadPreferences restores and validates view options', () => {
     hideCompleted: false,
     onlyUnprefixed: false,
   });
+  assert.deepEqual(loaded.panel, { minimized: false });
+
+  const minimized = manager.loadPreferences({
+    getItem: () => JSON.stringify({ ...custom, panel: { minimized: true } }),
+  });
+  assert.deepEqual(minimized.panel, { minimized: true });
 });

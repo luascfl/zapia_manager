@@ -2,11 +2,11 @@
 
 ## Active milestone
 
-Milestone 5, filtros avançados e opções de catálogo, concluída na versão 0.5.2.
+Milestone 5, filtros avançados e opções de catálogo, concluída na versão 0.5.3.
 
 ## Active story
 
-US-007 concluída: quatro opções persistidas, fixados nativos estruturais, remoção imediata de chats excluídos no catálogo, menu contextual próprio sob os 3 pontinhos de cada linha e suporte a Alt+C para prefixar. Na versão 0.5.2, a restrição de exclusão para agentes/habilidades foi removida; todos os chats podem ser excluídos via fluxo nativo do Zapia. US-004 permanece fora deste ciclo.
+US-007 concluída: quatro opções persistidas, fixados nativos estruturais, remoção imediata de chats excluídos no catálogo, menu contextual próprio sob os 3 pontinhos de cada linha e suporte a Alt+C para prefixar. Na versão 0.5.3, foi adicionado botão para minimizar (`-`/`+`), ícone de engrenagem (`⚙`) para configurações, e o filtro de sem prefixo virou um botão em branco posicionado à esquerda de `[nº]`, com o botão de atualizar (`↻`) mantido à direita. US-004 permanece fora deste ciclo.
 ## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.
@@ -19,6 +19,15 @@ US-007 concluída: quatro opções persistidas, fixados nativos estruturais, rem
 - `node --test test/zapia-manager.test.mjs` passed, 6 tests, 0 failures, on 2026-09-06.
 - `graphify update .` rebuilt `.context/graphify-out` with 30 nodes and 56 edges.
 - LibreWolf 142.0.1 and an enabled Violentmonkey extension are present in the default profile.
+
+## Versão 0.5.3: Minimização do painel e filtro sem prefixo em botão rápido
+
+- Adicionado botão no cabeçalho do painel para minimizar (`-`) e restaurar (`+`), persistido em `preferences.panel.minimized`, preservando o catálogo e a seleção sem disparar nova varredura.
+- Botão de configuração do cabeçalho alterado para ícone de engrenagem (`⚙`).
+- A regra `onlyUnprefixed` foi transferida de dentro de "Filtros e prioridades" para um botão de filtro rápido com rótulo em branco (` `), posicionado imediatamente à esquerda de `[nº]`.
+- O botão de atualização (`↻`) permanece alinhado à direita da barra de filtros via `margin-inline-start: auto`.
+- 33 testes automatizados Node executados e aprovados.
+- Hot reload via CDP e smoke test autenticado no Zapia confirmaram dimensões, posições, alternância de minimização (`-` -> `+` -> `-`), filtragem sem prefixo e preservação íntegra do catálogo.
 
 ## Versão 0.5.2: Remoção da proteção contra exclusão de agentes
 

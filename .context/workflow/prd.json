@@ -109,7 +109,7 @@
       ],
       "priority": "high",
       "passes": true,
-      "notes": "Delivered in 0.5.1 and refined in 0.5.2. Live CDP smoke covered 113 chats, the four catalogue view rules, structural pinned recognition, immediate chat pruning on deletion (withoutChatId), dedicated row menu dropdown directly beneath the 3 dots of each chat row (Renomear, ✔ Prefixar, 🟡 Prefixar, Excluir), default Alt+C/Alt+Y/Alt+X shortcuts with backward-compatible Alt+Shift chords, and cleaned single-script Tampermonkey installation. In 0.5.2, agent deletion restrictions were removed so all chats can be deleted through the native confirmation flow. All 33 Node tests pass."
+      "notes": "Delivered in 0.5.1 and refined in 0.5.3. Live CDP smoke covered 113 chats, the catalogue view rules, structural pinned recognition, immediate chat pruning on deletion (withoutChatId), dedicated row menu dropdown directly beneath the 3 dots of each chat row (Renomear, ✔ Prefixar, 🟡 Prefixar, Excluir), default Alt+C/Alt+Y/Alt+X shortcuts with backward-compatible Alt+Shift chords, single-script Tampermonkey installation, and 0.5.3 UI enhancements: panel minimize/expand toggle (-/+), gear settings button (⚙), quick blank unprefixed filter button to the left of [nº], and right-aligned refresh button (↻). All 33 Node tests pass."
     }
   ]
 }
