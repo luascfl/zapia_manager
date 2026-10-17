@@ -2555,7 +2555,7 @@
   }
 
   window.__zapiaManager = Object.freeze({
-    version: '0.5.3',
+    version: '0.5.4',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
