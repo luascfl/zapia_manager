@@ -17,8 +17,8 @@ A dependency-free userscript for Tampermonkey or Violentmonkey that manages Zapi
 - Integrates the complete searchable DOM catalogue into the native sidebar's chat-list area, with `[number]`/emoji filters, title navigation and per-row native menus. The original logo, navigation and profile remain visible; there is no floating panel.
 - Deletes selected chats one at a time through Zapia’s native menu, confirming only inside the native `Excluir conversa?` dialog.
 - Re-mounts controls after SPA changes with a `MutationObserver`.
-- Shows bulk actions only while chats are selected; emojis and keyboard shortcuts remain configurable through the gear button (`⚙`). The panel can be minimized (`-`/`+`) to keep the sidebar compact without losing scan state.
-- Offers quick filters for unprefixed chats (blank chip to the left of `[nº]`), numeric IDs and managed emojis, with the refresh action (`↻`) on the right. Persisted catalogue options under `Filtros e prioridades` include prioritize agents (🟡), prioritize pending IDs, and hide completed (✔). All chats can be deleted through the Manager with native dialog confirmation.
+- Shows bulk actions only while chats are selected; emojis and keyboard shortcuts remain configurable through the gear button (`⚙`). The panel can be minimized (`-`/`+`) into a transparent, non-blocking header control so native sidebar navigation behind it remains fully accessible without losing scan state.
+- Offers quick filters for unprefixed chats (blank chip to the left of `[nº]`), numeric IDs and managed emojis, native search (`🔍`), and refresh (`↻`) on the right. Persisted catalogue options under `Filters and priorities` include prioritize agents (🟡), prioritize pending IDs, and hide completed (✔). All chats can be deleted through the Manager with native dialog confirmation.
 - Updates itself from GitHub: `@updateURL` and `@downloadURL` point to the raw file of `luascfl/zapia_manager` on `main`; raise `@version` for every release.
 
 ## Entry points

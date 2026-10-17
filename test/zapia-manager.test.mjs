@@ -307,7 +307,7 @@ test('selected chats include reusable agents and titles require only confirmatio
   const selected = manager.selectedChats(sample, ids);
   assert.deepEqual(selected.map((chat) => chat.id), ['a1', 'c1', 'a2', 'c2']);
 
-  assert.throws(() => manager.assertChatTitle(''), /Não foi possível confirmar o título/);
+  assert.throws(() => manager.assertChatTitle(''), /Unable to confirm the chat title/);
   assert.doesNotThrow(() => manager.assertChatTitle('🟡 Agente'));
   assert.doesNotThrow(() => manager.assertChatTitle('🟡 [1] Agente'));
   assert.doesNotThrow(() => manager.assertChatTitle('Chat normal'));

@@ -2,11 +2,11 @@
 
 ## Active milestone
 
-Milestone 5, filtros avançados e opções de catálogo, concluída na versão 0.5.3.
+Milestone 5, production English UI, non-blocking minimized panel, and quick search trigger, completed in version 0.5.4.
 
 ## Active story
 
-US-007 concluída: quatro opções persistidas, fixados nativos estruturais, remoção imediata de chats excluídos no catálogo, menu contextual próprio sob os 3 pontinhos de cada linha e suporte a Alt+C para prefixar. Na versão 0.5.3, foi adicionado botão para minimizar (`-`/`+`), ícone de engrenagem (`⚙`) para configurações, e o filtro de sem prefixo virou um botão em branco posicionado à esquerda de `[nº]`, com o botão de atualizar (`↻`) mantido à direita. US-004 permanece fora deste ciclo.
+US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; added quick search button (`🔍`) right next to the refresh button (`↻`) to trigger native Zapia search; updated version to 0.5.4.
 ## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.
@@ -20,15 +20,14 @@ US-007 concluída: quatro opções persistidas, fixados nativos estruturais, rem
 - `graphify update .` rebuilt `.context/graphify-out` with 30 nodes and 56 edges.
 - LibreWolf 142.0.1 and an enabled Violentmonkey extension are present in the default profile.
 
-## Versão 0.5.3: Minimização do painel e filtro sem prefixo em botão rápido
+## Versão 0.5.4: Interface em inglês, painel minimizado não-bloqueante e busca rápida
 
-- Adicionado botão no cabeçalho do painel para minimizar (`-`) e restaurar (`+`), persistido em `preferences.panel.minimized`, preservando o catálogo e a seleção sem disparar nova varredura.
-- Botão de configuração do cabeçalho alterado para ícone de engrenagem (`⚙`).
-- A regra `onlyUnprefixed` foi transferida de dentro de "Filtros e prioridades" para um botão de filtro rápido com rótulo em branco (` `), posicionado imediatamente à esquerda de `[nº]`.
-- O botão de atualização (`↻`) permanece alinhado à direita da barra de filtros via `margin-inline-start: auto`.
+- Toda a interface pública e mensagens do Zapia Manager foram traduzidas para o inglês (cabeçalhos, configurações, filtros, ações em lote, menu de linha, mensagens de erro e estados vazios).
+- O estado minimizado do painel (`-` -> `+`) foi corrigido: o painel torna-se transparente (`background: transparent`), sem bordas, com `pointer-events: none` no container geral e apenas o botão `+` clicável (`pointer-events: auto`).
+- O `installSidebarWheelGuard` foi ajustado para não bloquear eventos de roda quando o painel estiver minimizado, permitindo que a lista nativa do Zapia seja rolada e interagida normalmente.
+- Adicionado botão de busca rápida (`🔍`) ao lado do botão de atualizar (`↻`) na barra de filtros, que aciona o controle nativo de busca do Zapia.
 - 33 testes automatizados Node executados e aprovados.
-- Hot reload via CDP e smoke test autenticado no Zapia confirmaram dimensões, posições, alternância de minimização (`-` -> `+` -> `-`), filtragem sem prefixo e preservação íntegra do catálogo.
-
+- Hot reload via CDP e smoke test autenticado no Zapia confirmaram funcionalidade, minimização não-bloqueante, busca nativa e tradução completa.
 ## Versão 0.5.2: Remoção da proteção contra exclusão de agentes
 
 - Versão 0.5.2 removeu a barreira artificial de exclusão para chats de agentes/habilidades (prefix-1).
