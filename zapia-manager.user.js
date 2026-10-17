@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.17
+// @version      0.5.18
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -211,6 +211,47 @@
   function excludeHiddenChats(chats, hiddenChats = preferences.hiddenChats) {
     const hiddenIds = new Set((hiddenChats ?? []).map((item) => (typeof item === 'string' ? item : item.id)));
     return chats.filter((chat) => !hiddenIds.has(chat.id));
+  }
+
+  const SPECIAL_THREAD_KEY = /^ape@(?:home|notifications)_/u;
+  const THREAD_LIST_PARAMS = new Set([
+    'limit', 'before', 'contact_number', 'device_id', 'user_email', 'auth_token',
+  ]);
+
+  function matchKey(text) {
+    return String(text).normalize('NFC').replace(/\uFE0F/gu, '').replace(/\s+/gu, ' ').trim();
+  }
+
+  // pages: [{ before, nextCursor, hasMore, threads: [{ id, label }] }]. Returns the
+  // full server thread list (Map id -> thread) only when the page chain from the
+  // first page to a page with hasMore=false was observed without gaps.
+  function threadListFromPages(pages) {
+    const byCursor = new Map(pages.map((page) => [page.before, page]));
+    const visited = new Set();
+    const threads = new Map();
+    let cursor = null;
+
+    for (;;) {
+      if (visited.has(cursor)) return null;
+      visited.add(cursor);
+      const page = byCursor.get(cursor);
+      if (!page) return null;
+      for (const thread of page.threads) threads.set(thread.id, thread);
+      if (!page.hasMore) return threads;
+      if (!page.nextCursor) return null;
+      cursor = page.nextCursor;
+    }
+  }
+
+  // Cached thread keys that the server no longer lists. The special home and
+  // notifications threads are not part of the regular list and are never stale.
+  function findStaleThreadIds(cacheKeys, serverIds) {
+    if (!(serverIds?.size > 0)) return [];
+    return cacheKeys.filter((key) =>
+      typeof key === 'string'
+      && key.startsWith('ape@')
+      && !SPECIAL_THREAD_KEY.test(key)
+      && !serverIds.has(key));
   }
 
   function buildSupportDiagnosticPayload(error, context = {}) {
@@ -537,6 +578,8 @@
     catalogueView,
     pinnedBetweenSections,
     excludeHiddenChats,
+    threadListFromPages,
+    findStaleThreadIds,
     buildSupportDiagnosticPayload,
     isUnavailableChatError,
     selectedChats,
@@ -2377,6 +2420,7 @@
       chatListVersion,
       activeCatalogueId,
       [...selectedChatIds].join('\u0001'),
+      staleThreadIds.join(','),
     ].join('|');
     if (panel.dataset.zapiaManagerState === state) return;
     const previousScroll = panel.querySelector('.zapia-manager-chat-list')?.scrollTop
@@ -2413,6 +2457,21 @@
     heading.append(headingCopy, headingActions);
     panel.append(heading);
     if (minimized) return;
+
+    if (staleThreadIds.length) {
+      const notice = document.createElement('div');
+      notice.className = 'zapia-manager-stale-notice';
+      const message = document.createElement('span');
+      message.textContent = `${staleThreadIds.length} chat${staleThreadIds.length === 1 ? '' : 's'} no longer exist${staleThreadIds.length === 1 ? 's' : ''} on Zapia and cannot open.`;
+      const clean = button(
+        'Clean up',
+        'Remove these chats from the Zapia cache stored in this browser',
+        purgeStaleThreads,
+      );
+      clean.disabled = busy;
+      notice.append(message, clean);
+      panel.append(notice);
+    }
 
     const filters = document.createElement('div');
     filters.className = 'zapia-manager-filters';
@@ -2774,8 +2833,189 @@
       .zapia-manager-toast { position: fixed; z-index: 2147483647 !important; right: 16px; bottom: 16px; max-inline-size: min(420px, calc(100vw - 32px)); padding: 10px; border-radius: 6px; background: #222; color: #fff; font: 14px system-ui, sans-serif; pointer-events: auto !important; }
       .zapia-manager-toast-error { background: #9f1d1d; }
       .zapia-manager-toast-warning { background: #7b5600; }
+      .zapia-manager-stale-notice { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 11px; background: #3a2e12; color: #f0d9a0; border-bottom: 1px solid #292b2b; }
+      .zapia-manager-stale-notice span { flex: 1; min-width: 0; }
     `;
     document.head.append(style);
+  }
+
+  const THREAD_CACHE_DB = 'basechatsbox';
+  const THREAD_CACHE_STORE = 'box';
+  const STALE_BACKUP_KEY = 'zapia_manager_stale_thread_backup_v1';
+  const threadPages = new Map();
+  let staleThreadIds = [];
+  let staleCheckScheduled = false;
+
+  function threadsPageRequest(input) {
+    try {
+      const raw = typeof input === 'string' || input instanceof URL ? String(input) : input?.url;
+      const url = new URL(raw, location.href);
+      if (!/\/api\/v1\/threads$/u.test(url.pathname)) return null;
+      for (const name of url.searchParams.keys()) {
+        if (!THREAD_LIST_PARAMS.has(name)) return null;
+      }
+      return { before: url.searchParams.get('before') };
+    } catch {
+      return null;
+    }
+  }
+
+  function recordThreadsPage(request, body) {
+    if (!body || !Array.isArray(body.threads)) return;
+    const threads = [...(body.threads_pinned ?? []), ...body.threads]
+      .filter((thread) => typeof thread?.id === 'string')
+      .map((thread) => ({ id: thread.id, label: typeof thread.label === 'string' ? thread.label : '' }));
+    threadPages.set(request.before, {
+      before: request.before,
+      nextCursor: body.next_cursor ?? null,
+      hasMore: body.has_more === true,
+      threads,
+    });
+    scheduleStaleCheck();
+  }
+
+  // Observation only: Zapia receives the original promise untouched, and our
+  // read of a cloned response can never affect its own request.
+  function installThreadListObserver() {
+    const originalFetch = window.fetch;
+    if (typeof originalFetch !== 'function') return;
+    const observedFetch = function fetch(...args) {
+      const promise = originalFetch.apply(this, args);
+      const request = threadsPageRequest(args[0]);
+      if (request) {
+        promise
+          .then((response) => (response.ok ? response.clone().json() : null))
+          .then((body) => recordThreadsPage(request, body))
+          .catch(() => {});
+      }
+      return promise;
+    };
+    window.fetch = observedFetch;
+    lifetime.signal.addEventListener('abort', () => {
+      if (window.fetch === observedFetch) window.fetch = originalFetch;
+    }, { once: true });
+  }
+
+  function idbRequest(request) {
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Never creates the database: opening a missing one aborts its upgrade.
+  function openThreadCache() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(THREAD_CACHE_DB);
+      request.onupgradeneeded = () => request.transaction.abort();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result;
+        if (db.objectStoreNames.contains(THREAD_CACHE_STORE)) {
+          resolve(db);
+        } else {
+          db.close();
+          reject(new Error('Zapia thread cache store not found.'));
+        }
+      };
+    });
+  }
+
+  async function readThreadCacheKeys() {
+    const db = await openThreadCache();
+    try {
+      return await idbRequest(
+        db.transaction(THREAD_CACHE_STORE, 'readonly').objectStore(THREAD_CACHE_STORE).getAllKeys(),
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  function scheduleStaleCheck() {
+    if (staleCheckScheduled) return;
+    staleCheckScheduled = true;
+    later(() => {
+      staleCheckScheduled = false;
+      refreshStaleThreads().catch((error) => {
+        console.warn('[Zapia Manager] stale chat check failed:', error);
+      });
+    }, 1000);
+  }
+
+  async function refreshStaleThreads() {
+    const server = threadListFromPages([...threadPages.values()]);
+    const ids = server
+      ? findStaleThreadIds(await readThreadCacheKeys(), new Set(server.keys()))
+      : [];
+    if (lifetime.signal.aborted || ids.join() === staleThreadIds.join()) return;
+    staleThreadIds = ids;
+    renderManagerPanel();
+  }
+
+  function bytesToBase64(value) {
+    const bytes = value instanceof ArrayBuffer
+      ? new Uint8Array(value)
+      : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+  }
+
+  // Backs the raw entries up to localStorage first; nothing is deleted if that fails.
+  async function removeStaleThreadsFromCache(ids) {
+    const db = await openThreadCache();
+    try {
+      const store = (mode) => db.transaction(THREAD_CACHE_STORE, mode).objectStore(THREAD_CACHE_STORE);
+      const entries = [];
+      for (const id of ids) {
+        const value = await idbRequest(store('readonly').get(id));
+        if (value === undefined) continue;
+        if (!(value instanceof ArrayBuffer || ArrayBuffer.isView(value))) {
+          throw new Error(`Unexpected Zapia cache entry format for ${id}.`);
+        }
+        entries.push({ id, base64: bytesToBase64(value) });
+      }
+      window.localStorage.setItem(
+        STALE_BACKUP_KEY,
+        JSON.stringify({ savedAt: new Date().toISOString(), entries }),
+      );
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(THREAD_CACHE_STORE, 'readwrite');
+        const os = tx.objectStore(THREAD_CACHE_STORE);
+        for (const id of ids) os.delete(id);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function purgeStaleThreads() {
+    const server = threadListFromPages([...threadPages.values()]);
+    if (!server || !staleThreadIds.length || chatActionDepth > 0) return;
+    const ids = [...staleThreadIds];
+    const serverTitles = new Set([...server.values()].map((thread) => matchKey(thread.label)));
+    const titles = knownChats.map((chat) => chat.title).filter((text) => !serverTitles.has(matchKey(text)));
+    const listed = titles.length === ids.length
+      ? `\n\n${titles.slice(0, 12).map((text) => `• ${text}`).join('\n')}${titles.length > 12 ? `\n… and ${titles.length - 12} more` : ''}`
+      : '';
+
+    if (!window.confirm(
+      `${ids.length} chat${ids.length === 1 ? ' is' : 's are'} still listed by Zapia but ${ids.length === 1 ? 'does' : 'do'} not exist on its servers, so ${ids.length === 1 ? 'it' : 'they'} cannot open or be deleted.${listed}\n\nRemove ${ids.length === 1 ? 'it' : 'them'} from the Zapia cache stored in this browser? A backup is kept in this browser's local storage and the page will reload.`,
+    )) return;
+
+    try {
+      await removeStaleThreadsFromCache(ids);
+    } catch (error) {
+      toast(`Could not clean the Zapia cache: ${error.message}`, 'error');
+      return;
+    }
+    window.location.reload();
   }
 
   function boot() {
@@ -2799,7 +3039,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.17',
+    version: '0.5.18',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
@@ -2808,12 +3048,15 @@
       chats: knownChats.length,
       scanning: chatScanRunning,
       acting: chatActionDepth > 0,
+      staleThreads: staleThreadIds.length,
       timeouts: ownedTimeouts.size,
       intervals: ownedIntervals.size,
       frames: ownedFrames.size,
       observers: ownedObservers.size,
     }),
   });
+
+  installThreadListObserver();
 
   if (document.body) {
     boot();

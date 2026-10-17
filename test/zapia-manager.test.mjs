@@ -460,3 +460,36 @@ test('isChatHeaderControl accepts buttons in the chat header band and rejects me
     navRight: 280,
   }), false);
 });
+
+test('threadListFromPages returns the server list only for a gap-free page chain', () => {
+  const page = (before, nextCursor, hasMore, ids) => ({
+    before, nextCursor, hasMore, threads: ids.map((id) => ({ id, label: id })),
+  });
+  const first = page(null, 'ape@c1', true, ['ape@pin', 'ape@a', 'ape@b']);
+  const last = page('ape@c1', null, false, ['ape@pin', 'ape@c']);
+
+  assert.deepEqual([...manager.threadListFromPages([first, last]).keys()], ['ape@pin', 'ape@a', 'ape@b', 'ape@c']);
+  // A single final page is a complete list.
+  assert.deepEqual([...manager.threadListFromPages([page(null, null, false, ['ape@a'])]).keys()], ['ape@a']);
+  // The continuation page was never observed: the list is incomplete.
+  assert.equal(manager.threadListFromPages([first]), null);
+  // A continuation page without its first page cannot prove completeness.
+  assert.equal(manager.threadListFromPages([last]), null);
+  // A cursor cycle never terminates the chain.
+  assert.equal(manager.threadListFromPages([page(null, 'ape@c1', true, ['ape@a']), page('ape@c1', 'ape@c1', true, ['ape@b'])]), null);
+  assert.equal(manager.threadListFromPages([]), null);
+});
+
+test('findStaleThreadIds flags only regular cached threads missing from the server', () => {
+  const server = new Set(['ape@live1', 'ape@live2']);
+  const cache = [
+    'ape@live1', 'ape@ghost', 'ape@live2',
+    'ape@home_478a315f-a1c9-4f0d-b9cd-5301cf633cc0',
+    'ape@notifications_d0d402d6-bb57-55f6-9042-474',
+    'other-key',
+  ];
+  assert.deepEqual(manager.findStaleThreadIds(cache, server), ['ape@ghost']);
+  // Without a proven server list nothing may be flagged.
+  assert.deepEqual(manager.findStaleThreadIds(cache, new Set()), []);
+  assert.deepEqual(manager.findStaleThreadIds(cache, undefined), []);
+});
