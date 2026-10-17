@@ -2,11 +2,11 @@
 
 ## Active milestone
 
-Milestone 5, production English UI, continuous uninterrupted catalogue scrolling, freely scrollable non-blocking minimized panel, inline catalogue search with clear button, distraction-free row hover, and unrecoverable chat deletion recovery with diagnostic logging and hidden-chat persistence, completed in version 0.5.11.
+Milestone 5, production English UI, continuous uninterrupted catalogue scrolling, freely scrollable non-blocking minimized panel, inline catalogue search with clear button, distraction-free row hover, and unrecoverable chat deletion recovery with sequenced confirmation, diagnostic logging and hidden-chat persistence, completed in version 0.5.12.
 
 ## Active story
 
-US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; bypassed automatic `scrollSidebarToTop` in layout sync while minimized so user can scroll native sidebar freely; added state equality guard (`panel.dataset.zapiaManagerState === state`) in `renderManagerPanel` so periodic background sync loops (`syncLoop`, `mountControls`, `scheduleMount`) never rebuild the DOM or replace the `.zapia-manager-chat-list` node when state has not changed, eliminating sudden scroll stutter and interruptions; handled broken/unrecoverable chats (where Zapia backend yields 404 or fails to open header) by reverting active state, prompting with confirmation to attempt native Zapia deletion, emitting a structured diagnostic payload to `console.error` if native deletion cannot proceed, and persisting the chat in `preferences.hiddenChats` with restore controls in settings; added inline catalogue search triggered by `🔍` which replaces filter chips with an inline text input, filters catalogue results live inside the Manager panel with case/accent insensitivity, transforms the button to `×` for instant query reset and closure; resolved visual spacing in header between title and loading/summary status; removed distracting native browser `title` hover tooltips on chat row titles while preserving `aria-label`; release version 0.5.11.
+US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; bypassed automatic `scrollSidebarToTop` in layout sync while minimized so user can scroll native sidebar freely; added state equality guard (`panel.dataset.zapiaManagerState === state`) in `renderManagerPanel` so periodic background sync loops (`syncLoop`, `mountControls`, `scheduleMount`) never rebuild the DOM or replace the `.zapia-manager-chat-list` node when state has not changed, eliminating sudden scroll stutter and interruptions; handled broken/unrecoverable chats (where Zapia backend yields 404 or fails to open header) by reverting active state, catching `isUnavailableChatError` outside the initial `runChatAction`, prompting with confirmation to attempt native Zapia deletion, emitting a structured diagnostic payload to `console.error` if native deletion cannot proceed, and persisting the chat in `preferences.hiddenChats` with restore controls in settings; added inline catalogue search triggered by `🔍` which replaces filter chips with an inline text input, filters catalogue results live inside the Manager panel with case/accent insensitivity, transforms the button to `×` for instant query reset and closure; resolved visual spacing in header between title and loading/summary status; removed distracting native browser `title` hover tooltips on chat row titles while preserving `aria-label`; release version 0.5.12.
 ## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.
@@ -20,14 +20,14 @@ US-008 completed: full English public UI localization (headers, settings dialog,
 - `graphify update .` rebuilt `.context/graphify-out` with 30 nodes and 56 edges.
 - LibreWolf 142.0.1 and an enabled Violentmonkey extension are present in the default profile.
 
-## Versão 0.5.11: Tratamento com confirmação de exclusão, log de suporte e ocultação de chats quebrados
+## Versão 0.5.12: Correção de sequenciamento na recuperação de chats com erro e log de suporte
 
-- Se um chat não abrir (por exemplo, quando o backend do Zapia retorna 404 ou não expõe o cabeçalho nativo), o Manager restaura o `activeCatalogueId` anterior para não deixar a linha selecionada falsamente.
-- O usuário recebe uma confirmação (`confirm`): pergunta se deseja tentar apagar a conversa pelo Zapia e informa que, caso a exclusão não seja possível, ela será ocultada no Manager e detalhes de diagnóstico serão emitidos no console para o suporte.
-- Se o usuário aceitar e o Zapia não conseguir apagar (porque o menu ou o cabeçalho não existem), o Manager emite um log estruturado copiável com `[Zapia Manager]` via `console.error` (timestamp, id, título, URL e instruções) e armazena o chat em `preferences.hiddenChats` no `localStorage`.
-- O diálogo de configurações (`⚙`) ganhou uma seção "Hidden chats" com botão "Restore" para tornar qualquer chat oculto visível novamente no catálogo.
-- Versão do userscript e export de runtime unificados em `0.5.11`.
-- 36 testes automatizados Node executados e aprovados.
+- Identificada a falha de sequenciamento em 0.5.11: `promptUnavailableChatRecovery` era agendado dentro do `finally` da primeira `runChatAction`. Ao clicar em "OK", a segunda chamada a `runChatAction` colidia com `chatActionDepth > 0` ("Wait for the current action to finish"), e como estava com `void`, a rejeição era silenciosa antes de alcançar o `console.error` ou o `hideChat`.
+- Refatorado `openCatalogueChat`: agora captura `isUnavailableChatError` externamente após a primeira ação assíncrona encerrar completamente. A recuperação é aguardada (`await promptUnavailableChatRecovery`) com tratamento explícito (`try/catch` envolvendo `runChatAction` de exclusão nativa).
+- Quando a exclusão nativa falha, `recordUnavailableChatFailure` garante a emissão do log com `[Zapia Manager] Unrecoverable chat diagnostic report for Zapia support:`, a persistência da conversa em `preferences.hiddenChats` no `localStorage`, a exclusão imediata do catálogo e o toast de aviso.
+- Versão do userscript e export de runtime unificados em `0.5.12`.
+- 37 testes automatizados Node executados e aprovados (adicionado teste puro para `isUnavailableChatError`).
+- Hot reload via CDP confirmou a integridade do estado e o funcionamento das preferências e restauração.
 - Hot reload via CDP e smoke test confirmaram que a abertura normal de conversas permanece íntegra e que os testes unitários de exclusão e diagnóstico passam sem falhas.
 - Hot reload via CDP e inspeção no Chrome confirmaram ausência de atributo `title` nas linhas de chat e integridade dos demais controles.
 

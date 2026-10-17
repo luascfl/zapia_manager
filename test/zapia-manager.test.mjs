@@ -387,3 +387,19 @@ test('buildSupportDiagnosticPayload creates structured, privacy-safe report for 
   assert.ok(payload.timestamp);
   assert.ok(payload.instructions.includes('Zapia support'));
 });
+
+test('isUnavailableChatError recognizes header timeout but rejects generic errors', () => {
+  assert.equal(
+    manager.isUnavailableChatError(new Error('Zapia did not expose the selected chat header.')),
+    true,
+  );
+  assert.equal(
+    manager.isUnavailableChatError(new Error('Wait for the current action to finish.')),
+    false,
+  );
+  assert.equal(
+    manager.isUnavailableChatError(new Error('Unable to confirm the chat title.')),
+    false,
+  );
+  assert.equal(manager.isUnavailableChatError(null), false);
+});

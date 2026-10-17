@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.11
+// @version      0.5.12
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -214,6 +214,10 @@
       userAgent: context.userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : null),
       instructions: 'Provide this payload to Zapia support to report an unrecoverable/unavailable chat thread.',
     };
+  }
+
+  function isUnavailableChatError(error) {
+    return error?.message === 'Zapia did not expose the selected chat header.';
   }
 
   function pinnedBetweenSections(position, start, end) {
@@ -497,6 +501,7 @@
     pinnedBetweenSections,
     excludeHiddenChats,
     buildSupportDiagnosticPayload,
+    isUnavailableChatError,
     selectedChats,
     assertChatTitle,
     isManagedNode,
@@ -2133,31 +2138,36 @@
     renderManagerPanel();
   }
 
-  function promptUnavailableChatRecovery(chatId) {
+  function recordUnavailableChatFailure(error, chat) {
+    const payload = buildSupportDiagnosticPayload(error, {
+      id: chat.id,
+      title: chat.title,
+      url: location.href,
+    });
+    console.error('[Zapia Manager] Unrecoverable chat diagnostic report for Zapia support:', payload);
+    hideChat(chat.id, chat.title);
+    toast(
+      `Zapia could not delete "${chat.title}". It has been hidden in Zapia Manager and diagnostic details were logged to the console.`,
+      'warning',
+    );
+  }
+
+  async function promptUnavailableChatRecovery(chatId) {
     const chat = knownChats.find((c) => c.id === chatId) ?? { id: chatId, title: chatId };
     const confirmed = window.confirm(
       `Zapia could not load "${chat.title}".\n\nDo you want to try deleting it from Zapia?\n(If Zapia cannot delete this chat, it will be hidden in Zapia Manager and diagnostic details will be logged in the console for Zapia support).`,
     );
     if (!confirmed) return;
-    void runChatAction(async () => {
-      try {
+
+    try {
+      await runChatAction(async () => {
         const row = await findChatRow(chatId);
         await deleteChat(row);
         toast(`Deleted "${chat.title}".`, 'info');
-      } catch (deleteError) {
-        const payload = buildSupportDiagnosticPayload(deleteError, {
-          id: chatId,
-          title: chat.title,
-          url: location.href,
-        });
-        console.error('[Zapia Manager] Unrecoverable chat diagnostic report for Zapia support:', payload);
-        hideChat(chatId, chat.title);
-        toast(
-          `Zapia could not delete "${chat.title}". It has been hidden in Zapia Manager and diagnostic details were logged to the console.`,
-          'warning',
-        );
-      }
-    }, { refresh: true });
+      }, { refresh: true });
+    } catch (deleteError) {
+      recordUnavailableChatFailure(deleteError, chat);
+    }
   }
 
   function setViewOption(key, value) {
@@ -2276,21 +2286,19 @@
   }
 
   async function openCatalogueChat(id) {
-    await runChatAction(async () => {
-      let failed = false;
-      try {
-        const row = await findChatRow(id);
-        await activateNativeChat(row);
-      } catch (error) {
-        failed = true;
-        throw error;
-      } finally {
-        await scrollSidebarToTop();
-        if (failed) {
-          queueMicrotask(() => promptUnavailableChatRecovery(id));
+    try {
+      await runChatAction(async () => {
+        try {
+          const row = await findChatRow(id);
+          await activateNativeChat(row);
+        } finally {
+          await scrollSidebarToTop();
         }
-      }
-    }, { refresh: false });
+      }, { refresh: false });
+    } catch (error) {
+      if (!isUnavailableChatError(error)) throw error;
+      await promptUnavailableChatRecovery(id);
+    }
   }
 
   function protectManagedSurface(element) {
@@ -2745,7 +2753,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.11',
+    version: '0.5.12',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
