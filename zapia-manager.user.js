@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.4.0
+// @version      0.5.1
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
+// @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
+// @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @match        https://app.zapia.com/chat*
 // @match        https://app.zapia.com/chat/*
 // @run-at       document-start
@@ -14,6 +16,7 @@
 
   const DEFAULT_PREFERENCES = Object.freeze({
     prefixes: ['✔', '🟡'],
+    view: { prioritizeAgents: false, prioritizeIds: false, hideCompleted: false, onlyUnprefixed: false },
     shortcuts: {
       'prefix-check': { altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: 'KeyC' },
       'prefix-yellow': { altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: 'KeyY' },
@@ -162,6 +165,39 @@
     );
   }
 
+  function catalogueView(chats, filters, prefixes, view) {
+    const groups = [[], [], [], []];
+    const promoted = !view.onlyUnprefixed && (view.prioritizeAgents || view.prioritizeIds);
+    for (const chat of filterChats(chats, filters, prefixes)) {
+      const completed = chatMatchesFilter(chat.title, 'prefix-0', prefixes);
+      const agent = chatMatchesFilter(chat.title, 'prefix-1', prefixes);
+      const numbered = chatMatchesFilter(chat.title, 'numbered', prefixes);
+      if (view.hideCompleted && completed) continue;
+      if (view.onlyUnprefixed && !chat.pinned && (completed || agent || numbered)) continue;
+      const rank = !promoted ? 0 : chat.pinned ? 0
+        : view.prioritizeAgents && agent ? 1
+          : view.prioritizeIds && numbered && !completed ? 2 : 3;
+      groups[rank].push(chat);
+    }
+    return groups.flat();
+  }
+
+  function pinnedBetweenSections(position, start, end) {
+    return Number.isFinite(start) && Number.isFinite(end) && position >= start && position < end;
+  }
+
+  function deletableSelection(chats, ids, prefixes) {
+    return chats.filter((chat) => ids.has(chat.id)
+      && !chatMatchesFilter(chat.title, 'prefix-1', prefixes));
+  }
+
+  function assertDeletableTitle(title, prefixes) {
+    if (!title) throw new Error('Não foi possível confirmar o título do chat. Exclusão bloqueada.');
+    if (chatMatchesFilter(title, 'prefix-1', prefixes)) {
+      throw new Error('Agentes/habilidades são protegidos contra exclusão pelo Zapia Manager.');
+    }
+  }
+
   function mergeChatList(existing, found) {
     const result = [...existing];
     let anchor = -1;
@@ -170,6 +206,7 @@
       const at = result.findIndex(({ id }) => id === chat.id);
 
       if (at >= 0) {
+        result[at] = chat;
         anchor = at;
       } else {
         anchor += 1;
@@ -298,7 +335,9 @@
         return structuredClone(DEFAULT_PREFERENCES);
       }
 
-      return { prefixes, shortcuts };
+      const view = Object.fromEntries(Object.keys(DEFAULT_PREFERENCES.view)
+        .map((key) => [key, stored.view?.[key] === true]));
+      return { prefixes, shortcuts, view };
     } catch {
       return structuredClone(DEFAULT_PREFERENCES);
     }
@@ -404,6 +443,10 @@
     chatMatchesFilter,
     filterChats,
     mergeChatList,
+    catalogueView,
+    pinnedBetweenSections,
+    deletableSelection,
+    assertDeletableTitle,
     isManagedNode,
     needsRemount,
     shouldShowChatManager,
@@ -732,6 +775,15 @@
 
   let browserTabTitleObserver = null;
   let browserTabTitleScheduled = false;
+
+  function currentChatHeaderTitle() {
+    const header = semanticButtons().find((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.left > 280 && rect.top >= 0 && rect.top < 70
+        && /informações do chat/iu.test(element.getAttribute('aria-description') ?? '');
+    });
+    return header ? cleanChatTitle(normalizeSpace(header.textContent)) : '';
+  }
 
   function getActiveChatTitleForBrowserTab() {
     const prefix = 'Informações do chat';
@@ -1182,11 +1234,23 @@
   }
 
   async function deleteChat(row) {
+    let expectedTitle = '';
     if (row) {
-      await openNativeActions(row);
-    } else {
-      await openCurrentNativeActions();
+      expectedTitle = chatTitle(row);
+      assertDeletableTitle(expectedTitle, preferences.prefixes);
+      await activateNativeChat(row);
     }
+    // The native header proves which chat is open; a stale header must never
+    // be mistaken for the intended one before a destructive menu action.
+    const nativeTitle = await waitFor(
+      () => {
+        const title = currentChatHeaderTitle();
+        return title && (!expectedTitle || title === expectedTitle) ? title : null;
+      },
+      'the selected chat header',
+    ).catch(() => '');
+    assertDeletableTitle(nativeTitle, preferences.prefixes);
+    await openCurrentNativeActions();
 
     const deleteAction = await waitFor(
       () => visibleMenuAction(MENU_DELETE_ACTION),
@@ -1560,7 +1624,7 @@
         }
 
         savePreferences(
-          { prefixes, shortcuts },
+          { ...preferences, prefixes, shortcuts },
           window.localStorage,
         );
 
@@ -1609,8 +1673,10 @@
   let knownChats = restoredState?.chats ?? [];
   let chatListVersion = 0;
   let chatScanRunning = false;
-  let catalogueComplete = restoredState?.complete ?? false;
-  let chatScanStarted = restoredState?.complete ?? false;
+  let catalogueComplete = Boolean(restoredState?.complete
+    && knownChats.every((chat) => typeof chat.pinned === 'boolean'));
+  let chatScanStarted = catalogueComplete;
+  let nativeSections = new WeakMap();
   let chatActionDepth = 0;
   let rescanTimer = null;
   let sidebarTopOffset = restoredState?.sidebarTopOffset ?? null;
@@ -1633,29 +1699,72 @@
   }
 
   function filteredChats() {
-    return filterChats(knownChats, activeFilters, preferences.prefixes);
+    return catalogueView(knownChats, activeFilters, preferences.prefixes, preferences.view);
   }
 
   function nextFrame() {
     assertRuntimeActive();
     return new Promise((resolve, reject) => {
-      const cancel = () => {
+      let settled = false;
+      let fallbackId;
+      let frameId;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
         pendingWork.delete(cancel);
+        window.clearTimeout(fallbackId);
+        ownedTimeouts.delete(fallbackId);
+        window.cancelAnimationFrame(frameId);
+        ownedFrames.delete(frameId);
+        resolve();
+      };
+      const cancel = () => {
+        if (settled) return;
+        settled = true;
+        pendingWork.delete(cancel);
+        window.clearTimeout(fallbackId);
+        ownedTimeouts.delete(fallbackId);
+        window.cancelAnimationFrame(frameId);
+        ownedFrames.delete(frameId);
         reject(new DOMException('Userscript instance replaced.', 'AbortError'));
       };
       pendingWork.add(cancel);
-      frame(() => {
-        pendingWork.delete(cancel);
-        resolve();
-      });
+      frameId = frame(finish);
+      // rAF pauses in a backgrounded Flutter tab. This only releases the
+      // liveness wait; scrollSidebar still proves a real semantic change.
+      fallbackId = later(finish, 250);
     });
   }
 
+  function captureNativeSections(viewport) {
+    if (!viewport) return;
+    for (const marker of viewport.nav.querySelectorAll('flt-semantics[role="button"][aria-expanded]')) {
+      const label = semanticLabel(marker);
+      if (label !== 'Fixados' && label !== 'Conversas') continue;
+      const group = marker.parentElement;
+      const bounds = nativeSections.get(group) ?? {};
+      const rect = marker.getBoundingClientRect();
+      const origin = group.getBoundingClientRect().top - group.scrollTop;
+      if (label === 'Fixados') bounds.start = rect.bottom - origin;
+      else bounds.end = rect.top - origin;
+      nativeSections.set(group, bounds);
+    }
+  }
+
+  function nativeChatRecord(row) {
+    const group = row.parentElement;
+    const bounds = nativeSections.get(group);
+    const position = row.getBoundingClientRect().top - group.getBoundingClientRect().top + group.scrollTop;
+    return {
+      id: chatIdentity(row), title: chatTitle(row),
+      pinned: pinnedBetweenSections(position, bounds?.start, bounds?.end),
+    };
+  }
+
   function collectSidebarChats() {
-    return discoverChatRows(getChatViewport(), false).map((row) => ({
-      id: chatIdentity(row),
-      title: chatTitle(row),
-    }));
+    const viewport = getChatViewport();
+    captureNativeSections(viewport);
+    return discoverChatRows(viewport, false).map(nativeChatRecord);
   }
 
   function sidebarSignature() {
@@ -1754,6 +1863,7 @@
     if (chatScanRunning || chatActionDepth > 0) return;
 
     chatScanRunning = true;
+    nativeSections = new WeakMap();
     chatListVersion += 1;
 
     try {
@@ -1860,6 +1970,12 @@
     if (!deletionQueue.length) {
       throw new Error('Selecione pelo menos um chat.');
     }
+
+    const eligible = deletableSelection(knownChats, selectedChatIds, preferences.prefixes);
+    const protectedCount = deletionQueue.length - eligible.length;
+    deletionQueue = eligible.map(({ id }) => id);
+    if (protectedCount) toast(`${protectedCount} agente(s)/habilidade(s) protegido(s); não serão excluídos.`, 'warning');
+    if (!deletionQueue.length) return;
 
     await runChatAction(async () => {
       for (const id of [...deletionQueue]) {
@@ -1972,6 +2088,36 @@
     filters.append(refresh);
     panel.append(filters);
 
+    const advanced = document.createElement('details');
+    advanced.className = 'zapia-manager-view-options';
+    advanced.open = panel.dataset.viewOptionsOpen === 'true';
+    const advancedTitle = document.createElement('summary');
+    advancedTitle.textContent = `Filtros e prioridades${Object.values(preferences.view).some(Boolean) ? ' • ativos' : ''}`;
+    advanced.append(advancedTitle);
+    advanced.addEventListener('toggle', () => { panel.dataset.viewOptionsOpen = String(advanced.open); });
+    for (const [key, label] of [
+      ['prioritizeAgents', `Priorizar agentes/habilidades (${preferences.prefixes[1]})`],
+      ['prioritizeIds', 'Priorizar IDs pendentes'],
+      ['hideCompleted', `Ocultar concluídos (${preferences.prefixes[0]})`],
+      ['onlyUnprefixed', 'Somente sem prefixo, mantendo fixados'],
+    ]) {
+      const field = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.dataset.viewOption = key;
+      input.checked = preferences.view[key];
+      input.disabled = busy || (preferences.view.onlyUnprefixed && key.startsWith('prioritize'));
+      input.addEventListener('change', () => {
+        savePreferences({ ...preferences, view: { ...preferences.view, [key]: input.checked } }, window.localStorage);
+        const shown = new Set(filteredChats().map(({ id }) => id));
+        for (const id of selectedChatIds) if (!shown.has(id)) selectedChatIds.delete(id);
+        renderManagerPanel();
+      });
+      field.append(input, document.createTextNode(label));
+      advanced.append(field);
+    }
+    panel.append(advanced);
+
     const list = document.createElement('div');
     list.className = 'zapia-manager-chat-list';
     if (!chats.length) {
@@ -1984,6 +2130,8 @@
       const option = document.createElement('div');
       option.className = 'zapia-manager-chat-option';
       option.classList.toggle('is-current', chat.id === activeCatalogueId);
+      option.dataset.chatId = chat.id;
+      option.dataset.pinned = String(chat.pinned);
       const select = document.createElement('input');
       select.type = 'checkbox';
       select.checked = selectedChatIds.has(chat.id);
@@ -2030,6 +2178,8 @@
         renderManagerPanel();
       });
       for (const action of [prefixOk, prefixYellow, remove, clear]) action.disabled = busy;
+      remove.disabled = busy || !deletableSelection(knownChats, selectedChatIds, preferences.prefixes).length;
+      if (!busy && remove.disabled) remove.title = 'Agentes/habilidades protegidos contra exclusão';
       actions.append(prefixOk, prefixYellow, remove, clear);
       panel.append(actions);
     }
@@ -2120,6 +2270,7 @@
     const viewport = getChatViewport();
     const rows = discoverChatRows(viewport);
     const hoverActionOpen = hasChatHoverAction(viewport);
+    captureNativeSections(viewport);
 
     if (!shouldShowChatManager(rows) && !knownChats.length) {
       if (!hoverActionOpen) {
@@ -2137,13 +2288,11 @@
     if (!chatScanRunning) {
       const merged = mergeChatList(
         knownChats,
-        rows.map((row) => ({
-          id: chatIdentity(row),
-          title: chatTitle(row),
-        })),
+        rows.map(nativeChatRecord),
       );
 
-      if (merged.length !== knownChats.length) {
+      if (merged.length !== knownChats.length
+        || merged.some((chat, index) => chat.pinned !== knownChats[index]?.pinned)) {
         setKnownChats(merged);
       }
     }
@@ -2192,6 +2341,11 @@
       .zapia-manager-filter { min-inline-size: 32px; font-size: 12px; min-block-size: 26px; }
       .zapia-manager-filter.is-active { background: #24443d; border-color: #34a38d; }
       .zapia-manager-refresh { margin-inline-start: auto; min-block-size: 26px; min-inline-size: 28px; }
+      .zapia-manager-view-options { flex: 0 0 auto; padding: 0 12px 4px; border-bottom: 1px solid #292b2b; font-size: 11px; color: #cbd4dc; }
+      .zapia-manager-view-options summary { cursor: pointer; padding: 4px 0; color: #b3baba; user-select: none; }
+      .zapia-manager-view-options label { display: flex; align-items: center; gap: 7px; padding: 3px 0; line-height: 1.3; }
+      .zapia-manager-view-options label:has(input:disabled) { opacity: .5; }
+      .zapia-manager-view-options input { flex: 0 0 auto; inline-size: 14px; block-size: 14px; margin: 0; accent-color: #32bfa6; }
       .zapia-manager-chat-list { flex: 1 1 auto; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 6px 8px; scrollbar-width: thin; scrollbar-color: #4e5553 transparent; }
       .zapia-manager-chat-option { display: flex; align-items: center; gap: 7px; padding: 2px 6px; min-inline-size: 0; border-radius: 7px; user-select: text; }
       .zapia-manager-chat-option:hover, .zapia-manager-chat-option.is-current { background: #2a2e2e; }
@@ -2239,7 +2393,7 @@
   }
 
   window.__zapiaManager = Object.freeze({
-    version: '0.4.0',
+    version: '0.5.1',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

@@ -198,3 +198,131 @@ test('the Zapia cache recovery request clears only Zapia’s stale-cache marker 
   assert.equal(data.get('session'), 'preserved');
   assert.equal(manager.requestZapiaCacheRecovery(storage), false);
 });
+test('pinnedBetweenSections verifies bounding range', () => {
+  assert.equal(manager.pinnedBetweenSections(300, 250, 600), true);
+  assert.equal(manager.pinnedBetweenSections(200, 250, 600), false);
+  assert.equal(manager.pinnedBetweenSections(600, 250, 600), false);
+  assert.equal(manager.pinnedBetweenSections(300, null, 600), false);
+  assert.equal(manager.pinnedBetweenSections(300, 250, undefined), false);
+});
+
+test('catalogueView preserves native order when no priority or filter is enabled', () => {
+  const sample = [
+    { id: '1', title: '🟡 Agent 1', pinned: true },
+    { id: '2', title: '[10] Task', pinned: false },
+    { id: '3', title: '✔ Done', pinned: false },
+    { id: '4', title: 'Plain', pinned: false },
+  ];
+  const view = { prioritizeAgents: false, prioritizeIds: false, hideCompleted: false, onlyUnprefixed: false };
+  assert.deepEqual(manager.catalogueView(sample, new Set(), prefixes, view), sample);
+});
+
+test('catalogueView prioritizes agents then pending IDs after pinned chats', () => {
+  const sample = [
+    { id: 'p1', title: 'Pinned regular', pinned: true },
+    { id: 'p2', title: '✔ Pinned done', pinned: true },
+    { id: 'r1', title: 'Ordinary 1', pinned: false },
+    { id: 'a1', title: '🟡 Agent Alpha', pinned: false },
+    { id: 't1', title: '[1] Open bug', pinned: false },
+    { id: 't2', title: '✔ [2] Fixed bug', pinned: false },
+    { id: 'a2', title: '🟡 [99] Agent with ID', pinned: false },
+    { id: 'r2', title: 'Ordinary 2', pinned: false },
+  ];
+
+  // prioritizeAgents only
+  const justAgents = manager.catalogueView(sample, new Set(), prefixes, {
+    prioritizeAgents: true, prioritizeIds: false, hideCompleted: false, onlyUnprefixed: false,
+  });
+  assert.deepEqual(justAgents.map((c) => c.id), ['p1', 'p2', 'a1', 'a2', 'r1', 't1', 't2', 'r2']);
+
+  // prioritizeIds only: pending IDs promoted, completed IDs NOT promoted
+  const justIds = manager.catalogueView(sample, new Set(), prefixes, {
+    prioritizeAgents: false, prioritizeIds: true, hideCompleted: false, onlyUnprefixed: false,
+  });
+  assert.deepEqual(justIds.map((c) => c.id), ['p1', 'p2', 't1', 'a2', 'r1', 'a1', 't2', 'r2']);
+
+  // Both priorities enabled: pinned -> agents -> pending IDs -> remainder
+  const both = manager.catalogueView(sample, new Set(), prefixes, {
+    prioritizeAgents: true, prioritizeIds: true, hideCompleted: false, onlyUnprefixed: false,
+  });
+  assert.deepEqual(both.map((c) => c.id), ['p1', 'p2', 'a1', 'a2', 't1', 'r1', 't2', 'r2']);
+});
+
+test('catalogueView hideCompleted removes completed chats including pinned ones', () => {
+  const sample = [
+    { id: 'p1', title: 'Pinned regular', pinned: true },
+    { id: 'p2', title: '✔ Pinned done', pinned: true },
+    { id: 't1', title: '[1] Open task', pinned: false },
+    { id: 't2', title: '✔ [2] Done task', pinned: false },
+    { id: 'r1', title: 'Regular', pinned: false },
+  ];
+  const result = manager.catalogueView(sample, new Set(), prefixes, {
+    prioritizeAgents: false, prioritizeIds: false, hideCompleted: true, onlyUnprefixed: false,
+  });
+  assert.deepEqual(result.map((c) => c.id), ['p1', 't1', 'r1']);
+});
+
+test('catalogueView onlyUnprefixed keeps pinned chats and filters remainder to unprefixed only', () => {
+  const sample = [
+    { id: 'p1', title: '🟡 Pinned agent', pinned: true },
+    { id: 'p2', title: 'Pinned regular', pinned: true },
+    { id: 'p3', title: '✔ Pinned done', pinned: true },
+    { id: 'a1', title: '🟡 Agent', pinned: false },
+    { id: 't1', title: '[5] Numbered', pinned: false },
+    { id: 'd1', title: '✔ Done', pinned: false },
+    { id: 'u1', title: 'Conversa sem prefixo 1', pinned: false },
+    { id: 'u2', title: 'Conversa sem prefixo 2', pinned: false },
+  ];
+
+  const result = manager.catalogueView(sample, new Set(), prefixes, {
+    prioritizeAgents: true, prioritizeIds: true, hideCompleted: false, onlyUnprefixed: true,
+  });
+  // Pinned are kept; remainder has only u1 and u2. Priorities are bypassed.
+  assert.deepEqual(result.map((c) => c.id), ['p1', 'p2', 'p3', 'u1', 'u2']);
+
+  // Combined with hideCompleted, pinned done is also removed
+  const withHide = manager.catalogueView(sample, new Set(), prefixes, {
+    prioritizeAgents: true, prioritizeIds: true, hideCompleted: true, onlyUnprefixed: true,
+  });
+  assert.deepEqual(withHide.map((c) => c.id), ['p1', 'p2', 'u1', 'u2']);
+});
+
+test('deletableSelection and assertDeletableTitle protect reusable agents', () => {
+  const sample = [
+    { id: 'a1', title: '🟡 Agente de E-mails' },
+    { id: 'c1', title: 'Chat comum' },
+    { id: 'a2', title: '🟡 [2] Agente WhatsApp' },
+    { id: 'c2', title: '[1] Tarefa comum' },
+  ];
+  const ids = new Set(['a1', 'c1', 'a2', 'c2']);
+  const eligible = manager.deletableSelection(sample, ids, prefixes);
+  assert.deepEqual(eligible.map((c) => c.id), ['c1', 'c2']);
+
+  // assertDeletableTitle tests
+  assert.throws(() => manager.assertDeletableTitle('🟡 Agente', prefixes), /Agentes\/habilidades são protegidos/);
+  assert.throws(() => manager.assertDeletableTitle('🟡 [1] Agente', prefixes), /Agentes\/habilidades são protegidos/);
+  assert.throws(() => manager.assertDeletableTitle('', prefixes), /Não foi possível confirmar o título/);
+  assert.doesNotThrow(() => manager.assertDeletableTitle('Chat normal', prefixes));
+  assert.doesNotThrow(() => manager.assertDeletableTitle('[1] Chat com ID', prefixes));
+  assert.doesNotThrow(() => manager.assertDeletableTitle('✔ Concluído', prefixes));
+});
+
+test('loadPreferences restores and validates view options', () => {
+  const custom = {
+    prefixes: ['✅', '🟠'],
+    shortcuts: {
+      'prefix-check': { altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: 'KeyC' },
+      'prefix-yellow': { altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: 'KeyY' },
+      delete: { altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: 'KeyX' },
+    },
+    view: { prioritizeAgents: true, prioritizeIds: true, hideCompleted: false, onlyUnprefixed: false },
+  };
+  const storage = { getItem: () => JSON.stringify(custom) };
+  const loaded = manager.loadPreferences(storage);
+  assert.deepEqual(loaded.view, {
+    prioritizeAgents: true,
+    prioritizeIds: true,
+    hideCompleted: false,
+    onlyUnprefixed: false,
+  });
+});
