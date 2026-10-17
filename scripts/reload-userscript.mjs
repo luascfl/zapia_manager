@@ -107,7 +107,6 @@ try {
           .map((input) => 'text:' + input.closest('label').querySelector('span').textContent),
         filters: [],
         complete: chats.length > 0,
-        collapsed: panel?.classList.contains('is-collapsed') ?? false,
         listScroll: document.querySelector('.zapia-manager-chat-list')?.scrollTop ?? 0,
       }));
     })()`);

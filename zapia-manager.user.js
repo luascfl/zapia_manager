@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.3.0
-// @description  Search and filter the full Zapia chat catalogue, manage native actions and configurable shortcuts, and synchronize browser tab titles.
+// @version      0.4.0
+// @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @match        https://app.zapia.com/chat*
 // @match        https://app.zapia.com/chat/*
 // @run-at       document-start
@@ -68,7 +68,6 @@
   let deletionQueue = [];
   const HEADER_CLIP_TOP = 50;
   let observerScheduled = false;
-  let panelCollapsed = false;
   let settingsOpen = false;
 
   function normalizeSpace(value) {
@@ -377,6 +376,19 @@
     return null;
   }
 
+  function sidebarPlacement(nav, topOffset, profileTop, width, height) {
+    if (!nav || topOffset === null || nav.left < 0 || nav.right > width || nav.width <= 0) return null;
+    const top = Math.max(0, nav.top + topOffset);
+    const bottom = Math.min(nav.bottom, profileTop, height);
+    if (bottom <= top) return null;
+    return { left: nav.left, top, width: nav.width, height: bottom - top, right: nav.right, bottom };
+  }
+
+  function rectanglesOverlap(first, second) {
+    return first.left < second.right && first.right > second.left
+      && first.top < second.bottom && first.bottom > second.top;
+  }
+
   const testApi = {
     normalizeSpace,
     stripManagedPrefix,
@@ -385,7 +397,8 @@
     isHoverActionLabel,
     isMenuButtonLabel,
     isNavigationActionLabel,
-    hasNativeChatMenu,
+    sidebarPlacement,
+    rectanglesOverlap,
     selectRootChatRows,
     cleanChatTitle,
     chatMatchesFilter,
@@ -488,7 +501,9 @@
       chats: knownChats,
       filters: [...activeFilters],
       selection: [...selectedChatIds],
-      collapsed: panelCollapsed,
+      sidebarTopOffset,
+      activeCatalogueId,
+      activeCatalogueUrl,
       listScroll: document.querySelector('.zapia-manager-chat-list')?.scrollTop ?? 0,
       complete: catalogueComplete,
     };
@@ -1072,6 +1087,42 @@
     later(() => notice.remove(), 4500);
   }
 
+  async function dismissNativeMenu() {
+    const action = visibleMenuAction(MENU_RENAME_ACTION);
+    if (!action) return;
+    action.focus();
+    // Flutter applies semantic focus before routing keyboard events.
+    await nextFrame();
+    await nextFrame();
+    for (const type of ['keydown', 'keyup']) {
+      action.dispatchEvent(new KeyboardEvent(type, {
+        key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+        bubbles: true, cancelable: true,
+      }));
+    }
+    await waitFor(() => !visibleMenuAction(MENU_RENAME_ACTION), 'the native chat menu to close');
+  }
+
+  async function activateNativeChat(row) {
+    const id = chatIdentity(row);
+    await dismissNativeMenu();
+    if (!row.isConnected) row = await findChatRow(id);
+    const before = location.href;
+    const alreadyCurrent = activeCatalogueId === id && activeCatalogueUrl === before;
+    activeCatalogueId = id;
+    row.click();
+    if (!alreadyCurrent) {
+      await waitFor(
+        () => location.href !== before ? semanticMenuButton() : null,
+        'the selected chat to open', 3000,
+      ).catch(() => {
+        if (!semanticMenuButton()) throw new Error('Zapia did not expose the selected chat header.');
+      });
+    }
+    await scrollSidebarToTop();
+    activeCatalogueUrl = location.href;
+  }
+
   async function openNativeActions(row) {
     const embeddedMenuButton = rowMenuButton(row);
 
@@ -1080,27 +1131,8 @@
       return;
     }
 
-    const urlBeforeSelection = location.href;
-    row.click();
-
-    const menuButton = await waitFor(
-      () => {
-        if (location.href === urlBeforeSelection) {
-          return null;
-        }
-
-        return semanticMenuButton();
-      },
-      'the selected chat to open',
-      3000,
-    ).catch(() => semanticMenuButton());
-
-    if (!menuButton) {
-      throw new Error(
-        'Zapia did not expose the selected chat native more-actions button.',
-      );
-    }
-
+    await activateNativeChat(row);
+    const menuButton = await waitFor(semanticMenuButton, 'the selected chat native menu');
     menuButton.click();
   }
 
@@ -1417,6 +1449,7 @@
 
     dialog.className = 'zapia-manager-settings';
     dialog.dataset.zapiaManagerControl = 'true';
+    protectManagedSurface(dialog);
 
     const title = document.createElement('h2');
     title.textContent = 'Configurar emojis e atalhos';
@@ -1580,7 +1613,10 @@
   let chatScanStarted = restoredState?.complete ?? false;
   let chatActionDepth = 0;
   let rescanTimer = null;
-  panelCollapsed = restoredState?.collapsed ?? panelCollapsed;
+  let sidebarTopOffset = restoredState?.sidebarTopOffset ?? null;
+  let sidebarHomePending = false;
+  let activeCatalogueId = restoredState?.activeCatalogueId ?? null;
+  let activeCatalogueUrl = restoredState?.activeCatalogueUrl ?? location.href;
   for (const id of restoredState?.selection ?? []) selectedChatIds.add(id);
 
   function setKnownChats(next) {
@@ -1674,8 +1710,15 @@
     return scrollSidebar(deltaY, 1800);
   }
 
+  function nativeNavigationAtHome(viewport = getChatViewport()) {
+    if (!viewport) return false;
+    const first = [...viewport.nav.querySelectorAll('flt-semantics[role="button"]')]
+      .find((element) => semanticLabel(element) === 'Novo Chat');
+    return Boolean(first && first.getBoundingClientRect().top >= viewport.navRect.top + HEADER_CLIP_TOP);
+  }
+
   async function scrollSidebarToTop() {
-    for (;;) {
+    while (!nativeNavigationAtHome()) {
       if (!(await scrollSidebarStep(-SIDEBAR_SCROLL_STEP * 8))) return;
     }
   }
@@ -1714,8 +1757,6 @@
     chatListVersion += 1;
 
     try {
-      const anchorRow = discoverChatRows()[0];
-      const anchorId = anchorRow ? chatIdentity(anchorRow) : null;
 
       await scrollSidebarToTop();
 
@@ -1741,9 +1782,7 @@
         pruneSelection();
       }
 
-      if (anchorId) {
-        await findChatRow(anchorId).catch(() => null);
-      }
+      await scrollSidebarToTop();
     } catch (error) {
       if (error.name !== 'AbortError') throw error;
     } finally {
@@ -1762,7 +1801,7 @@
     }, 2500);
   }
 
-  async function runChatAction(task) {
+  async function runChatAction(task, { refresh = true } = {}) {
     assertRuntimeActive();
     if (chatScanRunning) {
       throw new Error(
@@ -1774,12 +1813,14 @@
     }
 
     chatActionDepth += 1;
+    renderManagerPanel();
 
     try {
       await task();
     } finally {
       chatActionDepth -= 1;
-      scheduleChatRescan();
+      if (refresh) scheduleChatRescan();
+      renderManagerPanel();
     }
   }
 
@@ -1847,229 +1888,151 @@
     renderManagerPanel();
   }
 
+  async function openCatalogueChat(id, menu = false) {
+    await runChatAction(async () => {
+      try {
+        const row = await findChatRow(id);
+        if (menu) await openNativeActions(row);
+        else await activateNativeChat(row);
+      } finally {
+        await scrollSidebarToTop();
+      }
+    }, { refresh: false });
+  }
+
+  function protectManagedSurface(element) {
+    for (const type of ['pointerdown', 'pointerup', 'pointermove', 'pointercancel', 'mousedown', 'mouseup', 'click', 'wheel']) {
+      element.addEventListener(type, (event) => event.stopPropagation(), { passive: true });
+    }
+  }
+
   function renderManagerPanel() {
+    let panel = document.querySelector('[data-zapia-manager-panel]');
+    if (!panel) {
+      panel = document.createElement('section');
+      panel.className = 'zapia-manager-sidebar';
+      panel.dataset.zapiaManagerPanel = 'true';
+      panel.dataset.zapiaManagerControl = 'true';
+      panel.setAttribute('aria-label', 'Conversas');
+      protectManagedSurface(panel);
+      document.body.append(panel);
+    }
+    syncNativeSidebarLayout();
     const state = [
-      panelCollapsed,
       JSON.stringify(preferences),
       [...activeFilters].sort().join(','),
       chatScanRunning,
+      chatActionDepth > 0,
       chatListVersion,
+      activeCatalogueId,
       [...selectedChatIds].join('\u0001'),
     ].join('|');
-
-    let panel = document.querySelector(
-      '[data-zapia-manager-panel]',
-    );
-
-    if (panel?.dataset.zapiaManagerState === state) {
-      return;
-    }
-
-    if (!panel) {
-      panel = document.createElement('aside');
-      panel.className = 'zapia-manager-panel';
-      panel.dataset.zapiaManagerPanel = 'true';
-      panel.dataset.zapiaManagerControl = 'true';
-      panel.setAttribute('aria-live', 'polite');
-      document.body.append(panel);
-    }
-
-    const previousScroll = panel
-      .querySelector('.zapia-manager-chat-list')?.scrollTop ?? restoredState?.listScroll ?? 0;
-
+    if (panel.dataset.zapiaManagerState === state) return;
+    const previousScroll = panel.querySelector('.zapia-manager-chat-list')?.scrollTop
+      ?? restoredState?.listScroll ?? 0;
     panel.dataset.zapiaManagerState = state;
-    panel.classList.toggle('is-collapsed', panelCollapsed);
     panel.replaceChildren();
-
-    if (panelCollapsed) {
-      const expand = button(
-        'Gerenciar chats',
-        'Abrir Zapia Manager',
-        () => {
-          panelCollapsed = false;
-          renderManagerPanel();
-        },
-      );
-
-      expand.classList.add('zapia-manager-launcher');
-      panel.append(expand);
-      return;
-    }
-
     const chats = filteredChats();
+    const busy = chatScanRunning || chatActionDepth > 0;
 
     const heading = document.createElement('div');
     heading.className = 'zapia-manager-panel-heading';
-
     const headingCopy = document.createElement('div');
     headingCopy.className = 'zapia-manager-panel-heading-copy';
-
     const title = document.createElement('strong');
-    title.textContent = 'Zapia Manager';
-
+    title.textContent = 'Conversas';
     const summary = document.createElement('span');
-    summary.textContent = `${chats.length}${
-      activeFilters.size ? ` de ${knownChats.length}` : ''
-    } chats · ${selectedChatIds.size} selecionado${
-      selectedChatIds.size === 1 ? '' : 's'
-    }${chatScanRunning ? ' · carregando…' : ''}`;
-
+    summary.setAttribute('role', 'status');
+    summary.textContent = chatScanRunning ? 'Carregando…'
+      : selectedChatIds.size ? `${selectedChatIds.size} selecionado${selectedChatIds.size === 1 ? '' : 's'}`
+        : activeFilters.size ? `${chats.length} de ${knownChats.length}` : String(knownChats.length);
     headingCopy.append(title, summary);
-
-    const settings = button(
-      'Configurar',
-      'Configurar emojis e atalhos',
-      configurePreferences,
-    );
-
-    settings.classList.add('zapia-manager-minimize');
-
-    const minimize = button(
-      'Minimizar',
-      'Minimizar Zapia Manager',
-      () => {
-        panelCollapsed = true;
-        renderManagerPanel();
-      },
-    );
-
-    minimize.classList.add('zapia-manager-minimize');
-
-    const headingActions = document.createElement('div');
-    headingActions.className = 'zapia-manager-heading-actions';
-    headingActions.append(settings, minimize);
-
-    heading.append(headingCopy, headingActions);
+    const settings = button('Configurar', 'Configurar emojis e atalhos', configurePreferences);
+    settings.classList.add('zapia-manager-settings-trigger');
+    settings.disabled = busy;
+    heading.append(headingCopy, settings);
     panel.append(heading);
 
     const filters = document.createElement('div');
     filters.className = 'zapia-manager-filters';
-
     for (const [key, label, hint] of [
       ['numbered', '[nº]', 'Mostrar chats com id [número]'],
       ['prefix-0', preferences.prefixes[0], 'Mostrar chats com o primeiro emoji'],
       ['prefix-1', preferences.prefixes[1], 'Mostrar chats com o segundo emoji'],
     ]) {
       const chip = button(label, hint, () => toggleFilter(key));
-
       chip.classList.add('zapia-manager-filter');
       chip.classList.toggle('is-active', activeFilters.has(key));
       chip.setAttribute('aria-pressed', String(activeFilters.has(key)));
       filters.append(chip);
     }
-
-    const refresh = button(
-      chatScanRunning ? 'Carregando…' : 'Atualizar lista',
-      'Recarrega a lista completa de chats rolando a barra lateral',
-      () => scanAllChats(),
-    );
-
+    const refresh = button('↻', 'Atualizar lista completa de conversas', scanAllChats);
     refresh.classList.add('zapia-manager-refresh');
-    refresh.disabled = chatScanRunning;
+    refresh.disabled = busy;
     filters.append(refresh);
     panel.append(filters);
 
     const list = document.createElement('div');
     list.className = 'zapia-manager-chat-list';
-
     if (!chats.length) {
       const empty = document.createElement('span');
       empty.className = 'zapia-manager-empty';
-      empty.textContent = chatScanRunning
-        ? 'Carregando chats…'
-        : 'Nenhum chat encontrado.';
+      empty.textContent = chatScanRunning ? 'Carregando conversas…' : 'Nenhuma conversa encontrada.';
       list.append(empty);
     }
-
     for (const chat of chats) {
-      const option = document.createElement('label');
+      const option = document.createElement('div');
       option.className = 'zapia-manager-chat-option';
-      option.title = chat.title;
-
+      option.classList.toggle('is-current', chat.id === activeCatalogueId);
       const select = document.createElement('input');
       select.type = 'checkbox';
       select.checked = selectedChatIds.has(chat.id);
+      select.disabled = busy;
       select.setAttribute('aria-label', `Selecionar ${chat.title}`);
-
       select.addEventListener('change', () => {
-        if (select.checked) {
-          selectedChatIds.add(chat.id);
-        } else {
-          selectedChatIds.delete(chat.id);
-        }
-
+        if (select.checked) selectedChatIds.add(chat.id);
+        else selectedChatIds.delete(chat.id);
         renderManagerPanel();
       });
-
-      const label = document.createElement('span');
-      label.textContent = chat.title;
-
-      option.append(select, label);
+      const open = button(chat.title, `Abrir ${chat.title}`, () => openCatalogueChat(chat.id));
+      open.classList.add('zapia-manager-chat-title');
+      open.disabled = busy;
+      if (chat.id === activeCatalogueId) open.setAttribute('aria-current', 'page');
+      const menu = button('⋯', `Mais ações de ${chat.title}`, () => openCatalogueChat(chat.id, true));
+      menu.classList.add('zapia-manager-chat-menu');
+      menu.disabled = busy;
+      option.append(select, open, menu);
       list.append(option);
     }
-
     panel.append(list);
     list.scrollTop = previousScroll;
 
-    const actions = document.createElement('div');
-    actions.className = 'zapia-manager-panel-actions';
-
-    const hasSelection = selectedChatIds.size > 0;
-
-    const prefixOk = button(
-      `${preferences.prefixes[0]} Prefixar (${
-        shortcutLabel(preferences.shortcuts['prefix-check'])
-      })`,
-      'Aplica o primeiro prefixo aos chats selecionados',
-      () => applyPrefixToSelectedChats(
-        `${preferences.prefixes[0]} `,
-      ),
-    );
-
-    prefixOk.disabled = !hasSelection;
-
-    const prefixYellow = button(
-      `${preferences.prefixes[1]} Prefixar (${
-        shortcutLabel(preferences.shortcuts['prefix-yellow'])
-      })`,
-      'Aplica o segundo prefixo aos chats selecionados',
-      () => applyPrefixToSelectedChats(
-        `${preferences.prefixes[1]} `,
-      ),
-    );
-
-    prefixYellow.disabled = !hasSelection;
-
-    const prepare = button(
-      `Excluir selecionados (${
-        shortcutLabel(preferences.shortcuts.delete)
-      })`,
-      'Exclui cada chat selecionado, um por vez, pela confirmação nativa do Zapia',
-      deleteSelectedChats,
-    );
-
-    prepare.disabled = !hasSelection;
-
-    const clear = button(
-      'Limpar seleção',
-      'Limpar seleção de chats',
-      () => {
+    if (selectedChatIds.size) {
+      const actions = document.createElement('div');
+      actions.className = 'zapia-manager-panel-actions';
+      const prefixOk = button(
+        `${preferences.prefixes[0]} Prefixar (${shortcutLabel(preferences.shortcuts['prefix-check'])})`,
+        'Aplica o primeiro prefixo aos chats selecionados',
+        () => applyPrefixToSelectedChats(`${preferences.prefixes[0]} `),
+      );
+      const prefixYellow = button(
+        `${preferences.prefixes[1]} Prefixar (${shortcutLabel(preferences.shortcuts['prefix-yellow'])})`,
+        'Aplica o segundo prefixo aos chats selecionados',
+        () => applyPrefixToSelectedChats(`${preferences.prefixes[1]} `),
+      );
+      const remove = button(
+        `Excluir (${shortcutLabel(preferences.shortcuts.delete)})`,
+        'Excluir as conversas selecionadas', deleteSelectedChats,
+      );
+      const clear = button('Limpar seleção', 'Limpar seleção de chats', () => {
         selectedChatIds.clear();
         deletionQueue = [];
         renderManagerPanel();
-      },
-    );
-
-    clear.disabled = !hasSelection;
-
-    actions.append(
-      prefixOk,
-      prefixYellow,
-      prepare,
-      clear,
-    );
-
-    panel.append(actions);
+      });
+      for (const action of [prefixOk, prefixYellow, remove, clear]) action.disabled = busy;
+      actions.append(prefixOk, prefixYellow, remove, clear);
+      panel.append(actions);
+    }
   }
 
   function removeManagerPanel() {
@@ -2086,27 +2049,64 @@
     await deleteChat(await findChatRow(id));
   }
 
-  function hasNativeChatMenu(entries) {
-    return entries.some(({ label, parentRole }) =>
-      parentRole === 'group' && MENU_RENAME_ACTION.test(label),
-    );
+  function syncNativeSidebarLayout() {
+    const panel = document.querySelector('[data-zapia-manager-panel]');
+    if (!panel) return;
+    const viewport = getChatViewport();
+    if (nativeNavigationAtHome(viewport)) {
+      sidebarTopOffset = viewport.top - viewport.navRect.top;
+    }
+    if (activeCatalogueUrl !== location.href) {
+      activeCatalogueUrl = location.href;
+      if (!chatActionDepth) activeCatalogueId = null;
+    }
+    const bounds = viewport
+      ? sidebarPlacement(viewport.navRect, sidebarTopOffset, viewport.bottom, innerWidth, innerHeight)
+      : null;
+    const focused = document.activeElement;
+    const nativeEntry = focused instanceof Element
+      && !focused.closest('[data-zapia-manager-control]')
+      && isEditableTarget(focused)
+      && viewport
+      && focused.getBoundingClientRect().left < viewport.navRect.right;
+    const action = visibleMenuAction(MENU_RENAME_ACTION);
+    const menuOverlaps = Boolean(bounds && action && rectanglesOverlap(bounds, action.getBoundingClientRect()));
+    panel.classList.toggle('is-sidebar-hidden', !bounds || isRadarOverlayOpen() || nativeEntry || menuOverlaps);
+    if (bounds) {
+      for (const [name, value] of Object.entries({
+        left: `${bounds.left}px`, top: `${bounds.top}px`,
+        width: `${bounds.width}px`, height: `${bounds.height}px`,
+      })) {
+        if (panel.style[name] !== value) panel.style[name] = value;
+      }
+    }
+    if (viewport && !nativeNavigationAtHome(viewport) && !nativeEntry && !isRadarOverlayOpen()
+      && !sidebarHomePending && !chatScanRunning && !chatActionDepth) {
+      sidebarHomePending = true;
+      void scrollSidebarToTop().catch((error) => toast(error.message, 'error')).finally(() => {
+        sidebarHomePending = false;
+        if (!lifetime.signal.aborted) syncNativeSidebarLayout();
+      });
+    }
   }
 
-  function syncPanelWithNativeMenu() {
-    const open = hasNativeChatMenu(
-      semanticButtons().map((element) => ({
-        label: semanticLabel(element),
-        parentRole: element.parentElement?.getAttribute('role'),
-      })),
-    );
-
-    document.querySelector('[data-zapia-manager-panel]')
-      ?.classList.toggle('is-native-menu-open', open);
+  function installSidebarWheelGuard() {
+    document.addEventListener('wheel', (event) => {
+      if (!event.isTrusted || event.target?.closest?.('[data-zapia-manager-control]')) return;
+      const panel = document.querySelector('.zapia-manager-sidebar:not(.is-sidebar-hidden)');
+      const viewport = getChatViewport();
+      if (panel && viewport && event.clientX >= viewport.navRect.left
+        && event.clientX < viewport.navRect.right && event.clientY >= viewport.navRect.top
+        && event.clientY < viewport.bottom) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, { capture: true, passive: false, signal: lifetime.signal });
   }
 
   function mountControls() {
     if (lifetime.signal.aborted) return;
-    syncPanelWithNativeMenu();
+    syncNativeSidebarLayout();
 
     if (
       hasFocusedTextEntry()
@@ -2169,278 +2169,51 @@
 
   function installStyles() {
     const style = document.createElement('style');
-
-    style.textContent = `
-      .zapia-manager-panel {
-        position: fixed;
-        z-index: 2147483647 !important;
-        inset: 72px 16px 16px auto;
-        box-sizing: border-box;
-        display: flex;
-        inline-size: min(320px, calc(100vw - 32px));
-        max-block-size: calc(100vh - 88px);
-        flex-direction: column;
-        overflow: hidden;
-        border: 1px solid #48515b;
-        border-radius: 10px;
-        background: #15191e;
-        color: #f3f6f8;
-        box-shadow: 0 16px 40px #0008;
-        font: 14px/1.35 system-ui, sans-serif;
-        pointer-events: auto !important;
-      }
-
-      .zapia-manager-panel-heading {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 14px 14px 10px;
-        border-bottom: 1px solid #353d46;
-      }
-
-      .zapia-manager-panel-heading-copy {
-        display: grid;
-        min-inline-size: 0;
-        gap: 2px;
-      }
-
-      .zapia-manager-panel-heading strong {
-        font-size: 15px;
-      }
-
-      .zapia-manager-panel-heading span {
-        color: #aeb8c2;
-        font-size: 12px;
-      }
-
-      .zapia-manager-minimize {
-        flex: 0 0 auto;
-        min-block-size: 24px;
-        padding: 2px 6px;
-      }
-
-      .zapia-manager-settings-feedback {
-        display: block;
-        min-block-size: 18px;
-        margin-top: 8px;
-        color: #f0b65a;
-        font-size: 12px;
-      }
-
-      .zapia-manager-shortcuts {
-        color: #7f8d9c !important;
-        font-size: 11px !important;
-        line-height: 1.25;
-      }
-
-      .zapia-manager-panel.is-native-menu-open {
-        visibility: hidden;
-        pointer-events: none !important;
-      }
-
-      .zapia-manager-panel.is-collapsed {
-        inset: auto 16px 16px auto;
-        display: block;
-        inline-size: max-content;
-        min-inline-size: 0;
-        max-inline-size: calc(100vw - 32px);
-        max-block-size: none;
-        overflow: visible;
-        border: 0;
-        border-radius: 0;
-        background: transparent;
-        box-shadow: none;
-      }
-
-      .zapia-manager-launcher {
-        min-block-size: 34px;
-        padding-inline: 10px;
-        box-shadow: 0 8px 24px #0008;
-      }
-
-      .zapia-manager-chat-list {
-        display: grid;
-        min-block-size: 0;
-        flex: 1 1 auto;
-        align-content: start;
-        gap: 2px;
-        overflow: auto;
-        padding: 8px;
-      }
-
-      .zapia-manager-chat-option {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        min-inline-size: 0;
-        padding: 7px 6px;
-        border-radius: 6px;
-        cursor: pointer;
-        user-select: text;
-      }
-
-      .zapia-manager-filters {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        padding: 8px 10px 0;
-      }
-
-      .zapia-manager-filter {
-        min-inline-size: 38px;
-      }
-
-      .zapia-manager-filter.is-active {
-        border-color: #e8b64b;
-        background: #3a3320;
-      }
-
-      .zapia-manager-refresh {
-        margin-inline-start: auto;
-      }
-
-      .zapia-manager-empty {
-        color: #aeb8c2;
-        padding: 8px;
-      }
-
-      .zapia-manager-heading-actions {
-        display: flex;
-        flex: 0 0 auto;
-        gap: 6px;
-      }
-
-      .zapia-manager-chat-option:hover {
-        background: #252c34;
-      }
-
-      .zapia-manager-chat-option input {
-        flex: 0 0 auto;
-        inline-size: 16px;
-        block-size: 16px;
-        margin: 0;
-        accent-color: #e8b64b;
-        cursor: pointer;
-      }
-
-      .zapia-manager-chat-option span {
-        min-inline-size: 0;
-        color: #e5e9ed;
-        overflow-wrap: anywhere;
-        user-select: text;
-      }
-
-      .zapia-manager-settings {
-        z-index: 2147483647;
-        inline-size: min(360px, calc(100vw - 32px));
-        border: 1px solid #52606d;
-        border-radius: 10px;
-        background: #15191e;
-        color: #f3f6f8;
-        box-shadow: 0 16px 40px #0008;
-        font: 14px/1.35 system-ui, sans-serif;
-      }
-
-      .zapia-manager-settings::backdrop {
-        background: #0009;
-      }
-
-      .zapia-manager-settings h2 {
-        margin: 0 0 12px;
-        font-size: 16px;
-      }
-
-      .zapia-manager-settings-fields {
-        display: grid;
-        gap: 10px;
-      }
-
-      .zapia-manager-settings label {
-        display: grid;
-        gap: 4px;
-        color: #cbd4dc;
-        font-size: 12px;
-      }
-
-      .zapia-manager-settings input {
-        box-sizing: border-box;
-        inline-size: 100%;
-        border: 1px solid #52606d;
-        border-radius: 5px;
-        background: #232a32;
-        color: #f3f6f8;
-        font: inherit;
-        padding: 7px;
-      }
-
-      .zapia-manager-settings-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 7px;
-        margin-top: 14px;
-      }
-
-      .zapia-manager-panel-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 7px;
-        padding: 10px;
-        border-top: 1px solid #353d46;
-      }
-
-      .zapia-manager-button {
-        border: 1px solid #52606d;
-        border-radius: 6px;
-        background: #232a32;
-        color: #f3f6f8;
-        cursor: pointer;
-        font: inherit;
-        line-height: 1.2;
-        min-block-size: 30px;
-        padding: 5px 7px;
-        pointer-events: auto !important;
-      }
-
-      .zapia-manager-button:hover:not(:disabled) {
-        background: #303a45;
-        border-color: #6d7d8e;
-      }
-
-      .zapia-manager-button:focus-visible {
-        outline: 2px solid #e8b64b;
-        outline-offset: 2px;
-      }
-
-      .zapia-manager-button:disabled {
-        cursor: not-allowed;
-        opacity: .45;
-      }
-
-      .zapia-manager-toast {
-        position: fixed;
-        z-index: 2147483647 !important;
-        right: 16px;
-        bottom: 16px;
-        max-inline-size: min(420px, calc(100vw - 32px));
-        padding: 10px;
-        border-radius: 6px;
-        background: #222;
-        color: #fff;
-        font: 14px system-ui, sans-serif;
-        pointer-events: auto !important;
-      }
-
-      .zapia-manager-toast-error {
-        background: #9f1d1d;
-      }
-
-      .zapia-manager-toast-warning {
-        background: #7b5600;
-      }
-    `;
-
     style.dataset.zapiaManagerStyle = 'true';
+    style.textContent = `
+      .zapia-manager-sidebar {
+        position: fixed; z-index: 2147483647 !important; box-sizing: border-box;
+        display: flex; flex-direction: column; overflow: hidden;
+        border: 0; border-right: 1px solid #272929; border-radius: 0;
+        background: #181919; color: #f2f3f3;
+        font: 13px/1.35 Inter, system-ui, sans-serif; pointer-events: auto !important;
+      }
+      .zapia-manager-sidebar.is-sidebar-hidden { visibility: hidden; pointer-events: none !important; }
+      .zapia-manager-panel-heading { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; }
+      .zapia-manager-panel-heading-copy { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+      .zapia-manager-panel-heading strong { font-size: 12px; font-weight: 600; }
+      .zapia-manager-panel-heading span { font-size: 11px; color: #a4abaa; }
+      .zapia-manager-filters { flex: 0 0 auto; display: flex; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid #292b2b; }
+      .zapia-manager-button { border: 1px solid #373b3b; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font: inherit; min-block-size: 28px; padding: 4px 7px; pointer-events: auto !important; }
+      .zapia-manager-button:hover:not(:disabled) { background: #2a2e2e; }
+      .zapia-manager-button:focus-visible { outline: 2px solid #32bfa6; outline-offset: 2px; }
+      .zapia-manager-button:disabled { opacity: .45; cursor: default; }
+      .zapia-manager-settings-trigger { border: 0; font-size: 11px; color: #b3baba; padding: 2px 0; min-block-size: 22px; }
+      .zapia-manager-filter { min-inline-size: 32px; font-size: 12px; min-block-size: 26px; }
+      .zapia-manager-filter.is-active { background: #24443d; border-color: #34a38d; }
+      .zapia-manager-refresh { margin-inline-start: auto; min-block-size: 26px; min-inline-size: 28px; }
+      .zapia-manager-chat-list { flex: 1 1 auto; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 6px 8px; scrollbar-width: thin; scrollbar-color: #4e5553 transparent; }
+      .zapia-manager-chat-option { display: flex; align-items: center; gap: 7px; padding: 2px 6px; min-inline-size: 0; border-radius: 7px; user-select: text; }
+      .zapia-manager-chat-option:hover, .zapia-manager-chat-option.is-current { background: #2a2e2e; }
+      .zapia-manager-chat-option input { flex: 0 0 auto; inline-size: 14px; block-size: 14px; margin: 0; accent-color: #32bfa6; }
+      .zapia-manager-chat-title { flex: 1 1 auto; min-inline-size: 0; text-align: left; border: 0; padding: 8px 0; overflow-wrap: anywhere; user-select: text; font-size: 12px; line-height: 1.4; }
+      .zapia-manager-chat-title:hover:not(:disabled) { background: transparent; }
+      .zapia-manager-chat-menu { flex: 0 0 auto; border: 0; padding: 0 2px; min-inline-size: 20px; opacity: 0; }
+      .zapia-manager-chat-option:hover .zapia-manager-chat-menu, .zapia-manager-chat-option:focus-within .zapia-manager-chat-menu { opacity: 1; }
+      .zapia-manager-empty { display: block; padding: 12px 8px; color: #a4abaa; }
+      .zapia-manager-panel-actions { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 8px; border-top: 1px solid #292b2b; font-size: 11px; }
+      .zapia-manager-settings { z-index: 2147483647; inline-size: min(360px, calc(100vw - 32px)); border: 1px solid #454d4b; border-radius: 10px; background: #181919; color: #f2f3f3; box-shadow: 0 16px 40px #0008; font: 14px/1.35 Inter, system-ui, sans-serif; }
+      .zapia-manager-settings::backdrop { background: #0009; }
+      .zapia-manager-settings h2 { margin: 0 0 12px; font-size: 16px; }
+      .zapia-manager-settings-fields { display: grid; gap: 10px; }
+      .zapia-manager-settings label { display: grid; gap: 4px; color: #cbd4dc; font-size: 12px; }
+      .zapia-manager-settings input { box-sizing: border-box; inline-size: 100%; border: 1px solid #454d4b; border-radius: 5px; background: #242828; color: #f2f3f3; font: inherit; padding: 7px; }
+      .zapia-manager-settings-feedback { display: block; min-block-size: 18px; margin-top: 8px; color: #f0b65a; font-size: 12px; }
+      .zapia-manager-settings-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 14px; }
+      .zapia-manager-toast { position: fixed; z-index: 2147483647 !important; right: 16px; bottom: 16px; max-inline-size: min(420px, calc(100vw - 32px)); padding: 10px; border-radius: 6px; background: #222; color: #fff; font: 14px system-ui, sans-serif; pointer-events: auto !important; }
+      .zapia-manager-toast-error { background: #9f1d1d; }
+      .zapia-manager-toast-warning { background: #7b5600; }
+    `;
     document.head.append(style);
   }
 
@@ -2453,23 +2226,20 @@
     installRadarProtection();
     installBrowserTabTitleSync();
     if (knownChats.length) renderManagerPanel();
-    syncPanelWithNativeMenu();
+    installSidebarWheelGuard();
+    syncNativeSidebarLayout();
     syncLoop();
   }
 
   function syncLoop() {
-    if (
-      !hasFocusedTextEntry()
-      && !isRadarOverlayOpen()
-    ) {
-      mountControls();
-    }
+    if (!hasFocusedTextEntry() && !isRadarOverlayOpen()) mountControls();
+    else syncNativeSidebarLayout();
 
     later(syncLoop, 500);
   }
 
   window.__zapiaManager = Object.freeze({
-    version: '0.3.0',
+    version: '0.4.0',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

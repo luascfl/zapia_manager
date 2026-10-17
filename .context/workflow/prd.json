@@ -9,7 +9,7 @@
       "acceptanceCriteria": [
         "Targets https://app.zapia.com/chat only.",
         "Adds ✔ and 🟡 prefix actions without stacking or duplicating managed prefixes; both emojis are configurable.",
-        "Provides a separate side panel for selecting visible chats and collapses it into a launcher.",
+        "Provides a selectable searchable catalogue in the native sidebar area; US-006 supersedes the original floating panel and launcher.",
         "Deletion opens Zapia's native flow and confirms it only inside the visible `Excluir conversa?` dialog, one chat at a time.",
         "Defaults `Alt+Shift+C`, `Alt+Shift+Y` and `Alt+Shift+X` prefix with ✔, prefix with 🟡 and delete the current chat; the settings dialog captures and validates new chords.",
         "Shortcuts do not intercept typing or repeated keydown events.",
@@ -74,6 +74,22 @@
       "priority": "high",
       "passes": true,
       "notes": "0.3.0. Explicit two-direction sidebar traversal discovered 113 unique chats in 12.786 s. Browser smoke verified 5 numbered, 56 emoji-1 and 24 emoji-2 matches; OR filtering and hidden-selection removal; DOM text search reached an offscreen panel title. Repeated source-only replacement preserved catalogue, filters, selection and scroll, retained one keyboard listener/panel/style, and disposed all old owned resources. Final replacement took 57 ms with no document reload or scan. An offscreen selected chat reached its own rename dialog via the header menu; save was blocked and the dialog cancelled. Syntax checks and 23 Node tests passed. Local sanitized evidence: .context/workflow/ralph/evidence/us-005.json. The injector updates the current page, not the extension installation."
+    },
+    {
+      "id": "US-006",
+      "title": "Integrate the searchable catalogue into the native sidebar area",
+      "description": "As a Zapia user, I use one seamlessly styled sidebar rather than a separate floating manager. The user accepts a DOM catalogue replacing the Canvas chat-list area while preserving native navigation and profile.",
+      "acceptanceCriteria": [
+        "No manager panel or launcher remains on the right; catalogue bounds stay inside the native sidebar between primary navigation and profile.",
+        "Full DOM titles, numeric/emoji filters, selection, settings and configured shortcuts remain available.",
+        "Clicking a title opens its native chat; a row action opens the correct native menu. Native sidebar navigation is returned to the top after reveal or refresh.",
+        "Main chat content, native navigation, profile and right-hand native menu are not covered.",
+        "Live browser checks cover layout, filters, browser text find and navigation before updating Tampermonkey.",
+        "The validated version is saved in Tampermonkey, verified from its dashboard/editor after reopening, and checked on a freshly loaded Zapia page."
+      ],
+      "priority": "high",
+      "passes": true,
+      "notes": "Delivered in 0.4.0. Live CDP smoke covered 113 chats, numeric/emoji filters, offscreen DOM text find, native title navigation including an offscreen source row, active highlighting, native menu coexistence and focused/frame-settled Escape dismissal, checkbox/settings isolation, and native search restoration. Sidebar bounds were x=0..280, y=286..762.667 with native navigation/profile preserved; no floating panel/launcher remained. Syntax and 25 Node tests passed. Tampermonkey saved one enabled Zapia Manager 0.4.0; after reloading its dashboard and reopening the editor, persisted source matched the validated file exactly. A fresh Zapia page automatically started 0.4.0 with 113 chats, one integrated sidebar, a non-overlapping native menu and no page errors. No chat data was changed. Local sanitized evidence: .context/workflow/ralph/evidence/us-006.json."
     }
   ]
 }

@@ -12,7 +12,7 @@ Deliver a Violentmonkey user script that discovers Zapia chat rows and applies o
 
 Dependency: Phase 1.
 
-Add selectable chat rows and an accessible bulk toolbar that only opens Zapia’s native deletion dialogs, leaving their final confirmation to the user.
+Add selectable chat rows and an accessible bulk toolbar that confirms deletion only inside Zapia's own native confirmation dialog, one chat at a time.
 
 ### Phase 3: Browser validation and release
 
@@ -33,4 +33,11 @@ Dependency: Milestone 1.
 Dependency: Milestone 2 panel/menu isolation.
 
 - US-005 (done): load the complete sidebar catalogue, make full titles searchable with browser find, filter by `[number]` and either configured emoji, and support userscript-only reloads that preserve the catalogue for fast browser testing.
+
+## Milestone 4: Seamless native-area catalogue
+
+Dependency: Milestone 3 catalogue and in-place development reload.
+
+- US-006 (done): integrate the catalogue and controls into the native sidebar's chat-list area, validate the surface, then update and verify Tampermonkey. Delivered in 0.4.0.
+
 

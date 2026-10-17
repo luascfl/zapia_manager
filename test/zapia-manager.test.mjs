@@ -59,10 +59,25 @@ test('the Zapia Pro promo banner is navigation, not a chat row', () => {
   assert.equal(manager.isNavigationActionLabel('Ganhe tempo com o Zapia Pro'), false);
 });
 
-test('the native chat menu is detected only by an exact Renomear item inside a group', () => {
-  assert.equal(manager.hasNativeChatMenu([{ label: 'Renomear', parentRole: 'group' }]), true);
-  assert.equal(manager.hasNativeChatMenu([{ label: 'Renomear', parentRole: null }]), false);
-  assert.equal(manager.hasNativeChatMenu([{ label: 'Edital para renomear', parentRole: 'group' }]), false);
+test('sidebar catalogue fits between native navigation and profile', () => {
+  const nav = { left: 0, right: 280, top: 0, bottom: 768, width: 280 };
+  assert.deepEqual(manager.sidebarPlacement(nav, 286, 708, 1366, 768), {
+    left: 0, top: 286, width: 280, height: 422, right: 280, bottom: 708,
+  });
+  assert.equal(manager.sidebarPlacement(nav, null, 708, 1366, 768), null);
+  assert.equal(manager.sidebarPlacement(nav, 286, 200, 1366, 768), null);
+});
+
+test('offscreen or closing native drawers never leave a floating catalogue', () => {
+  assert.equal(manager.sidebarPlacement({ left: -280, right: 0, top: 0, bottom: 768, width: 280 }, 286, 708, 1366, 768), null);
+  assert.equal(manager.sidebarPlacement({ left: 0, right: 280, top: 0, bottom: 768, width: 280 }, 286, 708, 240, 768), null);
+});
+
+test('native menus hide the catalogue only when their rectangles actually overlap', () => {
+  const sidebar = { left: 0, right: 280, top: 286, bottom: 708 };
+  assert.equal(manager.rectanglesOverlap(sidebar, { left: 1100, right: 1320, top: 60, bottom: 260 }), false);
+  assert.equal(manager.rectanglesOverlap(sidebar, { left: 180, right: 380, top: 300, bottom: 450 }), true);
+  assert.equal(manager.rectanglesOverlap(sidebar, { left: 280, right: 480, top: 300, bottom: 450 }), false);
 });
 
 const prefixes = ['✔', '🟡'];

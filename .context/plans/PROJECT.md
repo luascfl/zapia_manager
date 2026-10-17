@@ -8,7 +8,7 @@ A Tampermonkey/Violentmonkey userscript that adds deliberate chat-labeling, bulk
 
 - Target `https://app.zapia.com/chat` only.
 - Add configurable emoji prefixes (default `✔ ` and `🟡 `) to chat titles through Zapia’s visible edit interface.
-- Add per-chat selection checkboxes and a selected-count toolbar.
+- Integrate selection checkboxes, title navigation, per-row native menus and a selection-only bulk toolbar into the native sidebar's chat-list area, preserving its navigation and profile.
 - Delete through each chat’s native menu and confirm only inside Zapia’s own `Excluir conversa?` dialog, one chat at a time (changed on 2026-09-17 at the user’s request; it previously stopped at the dialog).
 - Act on the current chat through configurable shortcuts (defaults `Alt+Shift+C`, `Alt+Shift+Y`, `Alt+Shift+X`).
 - Render all discovered sidebar chats as searchable DOM text and filter by numeric id or either configured emoji.

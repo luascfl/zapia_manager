@@ -2,13 +2,13 @@
 
 ## Active milestone
 
-Milestone 1, Safe Zapia chat manager.
+Milestone 4, Seamless native-area catalogue, concluída na versão 0.4.0.
 
 ## Active story
 
-US-001, implemented and awaiting authenticated LibreWolf browser acceptance.
+US-006 concluída e instalada no Tampermonkey. Próxima story recomendada: retomar US-004, investigação do atalho que abre links; sem implementação adicional neste ciclo.
 
-## Decision log
+## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.
 - Use DOM labels and event dispatch only. Zapia’s native controls own title persistence and final deletion.
@@ -21,7 +21,7 @@ US-001, implemented and awaiting authenticated LibreWolf browser acceptance.
 - `graphify update .` rebuilt `.context/graphify-out` with 30 nodes and 56 edges.
 - LibreWolf 142.0.1 and an enabled Violentmonkey extension are present in the default profile.
 
-## Validation pending
+## Initial validation pending (superseded below)
 
 - Import `zapia-manager.user.js` in Violentmonkey and execute the manual browser sequence in `.context/docs/testing-strategy.md`.
 
@@ -176,3 +176,17 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Evidência sanitizada local: `.context/workflow/ralph/evidence/us-005.json` (diretório ignorado pelo Git por convenção). Documentação técnica e workflow atualizados. O comando injeta na aba atual, não instala a versão em Tampermonkey/Violentmonkey.
 - Fechamento: `graphify update .` gerou 112 nós e 240 relações. Procedimento de teste rápido incorporado ao arquivo existente `flutter-canvas-spa-cdp-testing.md` do hub gerenciado `browser-automation`, sem criar skill ou script auxiliar paralelo. Capturas temporárias do teste removidas; comando final em `scripts/reload-userscript.mjs`. Reviews não enviados: CLI e tentativa HTTP de agent.reviews expiraram.
 
+
+## US-006: integração na barra lateral, 2026-10-17
+
+- O usuário aprovou substituir visualmente a área da lista Canvas por uma lista DOM integrada; não houve alteração dos componentes internos do Flutter. Versão 0.4.0 remove painel flutuante, minimização e launcher.
+- A superfície `Conversas` acompanha os limites da barra nativa, abaixo da navegação principal e acima do perfil. Títulos abrem os chats nativos; ⋯ abre o menu correspondente. As ações em lote aparecem somente quando existe seleção.
+- Reutilizados catálogo completo, filtros por id/emojis, configurações e atalhos. Eventos de ponteiro/roda nos controles gerenciados não vazam para o Canvas. A navegação de origem volta ao topo depois de revelar um chat, inclusive quando a ação falha.
+- Smoke autenticado: 113 chats; filtros com 5, 56 e 24 resultados; `window.find` alcançou título fora da área visível; checkbox e configuração não mudaram a rota. Abertura de chat distante mudou a rota e restaurou a navegação. Busca nativa ocultou a lista integrada e ela voltou ao fechar a busca.
+- O teste encontrou um menu nativo que permanecia aberto ao trocar de chat. A correção dá foco à ação nativa, espera dois frames de renderização e envia Escape antes da navegação. O cenário passou após a correção. Limites medidos: x=0..280, y=286..762,667; menu nativo à direita visível sem sobreposição. Captura visual confirmada.
+- `node --check zapia-manager.user.js` e os 25 testes Node passaram. Iteração pelo comando existente, sem recarregar documento nem repetir varredura; trocas finais em 88–262 ms.
+- Tampermonkey não tinha Zapia Manager neste perfil. Foi salva uma única instalação 0.4.0 depois do smoke. Dashboard recarregado/editor reaberto: código persistido idêntico ao arquivo validado. Nova abertura de Zapia, sem injeção, carregou automaticamente 0.4.0, 113 chats, uma barra integrada e nenhum erro de página; menu nativo novamente visível sem sobreposição.
+- Nenhum chat foi renomeado ou excluído neste ciclo. Próximo trabalho continua US-004; os critérios antigos não foram declarados resolvidos pela nova interface.
+- Fechamento: `graphify update .` atualizou o grafo de código para 119 nós, 267 relações e 10 comunidades. Evidência sanitizada em `.context/workflow/ralph/evidence/us-006.json`, ignorada pelo Git.
+- Reutilizado o comando final `scripts/reload-userscript.mjs`; nenhum script auxiliar paralelo foi criado. Procedimento de foco/Escape e validação da instalação incorporado à referência existente `flutter-canvas-spa-cdp-testing.md` do hub gerenciado `browser-automation`.
+- Capturas temporárias deste smoke, com conteúdo pessoal, removidas após inspeção visual. Busca em `./tmp` e nos temporários nomeados para esta story não encontrou outros auxiliares; artefatos antigos ou ambíguos não foram apagados.

@@ -25,10 +25,15 @@ The tests cover prefix replacement and idempotence, invalid label rejection, Flu
 Use a logged-in Zapia account in a browser with a userscript manager:
 
 1. Install `zapia-manager.user.js` and open `https://app.zapia.com/chat`.
-2. Confirm the manager enables Flutter accessibility semantics and each visible chat row gets one checkbox plus `✔` and `🟡` controls.
-3. Apply either label to a non-critical chat and verify the native rename dialog saves a single managed prefix.
-4. Select only test chats, open the native deletion flow, and verify the script stops at the Zapia confirmation dialog.
-5. Confirm or cancel that dialog manually. For a destructive acceptance test, use a chat created solely for testing.
-6. Reload the page and verify the controls appear without manually enabling accessibility and never repeatedly re-render.
+2. Confirm one integrated `Conversas` list appears below native navigation and above the profile, with no separate floating panel. Wait for initial catalogue discovery to finish.
+3. Check numeric and emoji filters against the discovered titles. Use browser text find on a title below the list viewport.
+4. Click a visible title, then a title initially outside the native sidebar viewport. Confirm native chat navigation and restoration of `Novo Chat` at the top.
+5. Open a row's native menu: both it and the left catalogue must remain visible without overlap. Click another title and confirm the menu closes before navigation.
+6. Select a checkbox: only selection and the bulk footer should change, not the current native chat. Open settings and native `Buscar`; verify settings isolation and that the catalogue yields to native search and returns afterward.
+7. For rename/delete acceptance, use only a disposable chat created for testing. The script confirms deletion inside Zapia's native dialog; it does not stop for an additional manual confirmation.
+8. During development run `node scripts/reload-userscript.mjs --target TARGET_ID`; confirm one sidebar/style remains and no document navigation or repeated catalogue scan occurs.
+9. Only after live validation, save the source in Tampermonkey. Reopen the saved editor to compare the complete source, then load a fresh Zapia page without injection and verify its installed runtime version and layout.
 
 On 2026-09-06, a connected authenticated Chrome session verified prefixing `teste` to `✔ teste`, checkbox selection, the native dialog, and final deletion of that user-created test chat. Since 0.2.11 the script itself confirms the native dialog; automated checks avoid that step on real chats by blocking the final `Renomear`/`Excluir` clicks with a spy.
+
+Version 0.4.0 passed 25 Node tests and an authenticated CDP smoke run: 113 chats, filters (5 numbered, 56 first emoji, 24 second emoji), offscreen text find, native title navigation, menu coexistence/dismissal, selection isolation, settings and native search restoration. Tampermonkey's reopened editor matched the validated source exactly; a fresh Zapia page automatically loaded 0.4.0 with one sidebar and no page errors. No chat was renamed or deleted in this cycle.
