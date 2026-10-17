@@ -124,6 +124,21 @@
       "priority": "high",
       "passes": true,
       "notes": "Root cause: the Zapia client keeps thread entries in the basechatsbox IndexedDB (Hive) cache that the server no longer lists; opening one returns 404 Thread not found on /threads/<id>/messages, so no header or native menu exists and native delete cannot run. 0.5.18. Live: 112 cache keys, 92 server threads, 18 ghosts (one removed by hand, 17 by the Clean up action confirmed by the user). After cleanup: catalogue 92, cache 94 (92 + 2 special), notice gone, nothing returned after reload. 42 Node tests pass."
+    },
+    {
+      "id": "US-010",
+      "title": "Copy the title and full conversation of several selected chats at once",
+      "description": "As a Zapia user, I select several chats and copy each title plus its whole conversation to the clipboard in one action.",
+      "acceptanceCriteria": [
+        "A Copy context action appears with the batch actions and works for any number of selected chats.",
+        "Each chat is exported as its title followed by every message in chronological order, across all API pages, without duplicates.",
+        "Conversation text and media placeholders are always included; agent activity (tool calls, cards, drafts, intermediate notes) only through a setting.",
+        "When the clipboard is denied a dialog with the text and a Copy button is shown.",
+        "Chats that cannot be matched to a Zapia thread are reported, not silently dropped."
+      ],
+      "priority": "high",
+      "passes": true,
+      "notes": "0.5.19. Reads the user own chats from GET /api/v1/threads/<id>/messages (limit 100, before=<next_cursor>) with the session query parameters the app itself sends, captured by the existing read-only fetch observer; 401/403 clears the saved session. Titles map to thread ids through the observed thread list, with a unique prefix-stripped fallback for chats renamed here. Live: 3 selected chats copied (title + 89 messages) with progress on the button; the longest chat (17 pages, 1654 raw messages) produced 761 messages = the independent API count of text and media, in chronological order; the clipboard-denied fallback dialog and the activity setting were exercised. 44 Node tests pass."
     }
   ]
 }

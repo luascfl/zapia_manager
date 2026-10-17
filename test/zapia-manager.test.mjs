@@ -493,3 +493,40 @@ test('findStaleThreadIds flags only regular cached threads missing from the serv
   assert.deepEqual(manager.findStaleThreadIds(cache, new Set()), []);
   assert.deepEqual(manager.findStaleThreadIds(cache, undefined), []);
 });
+
+test('mergeMessagePages restores chronological order and drops boundary duplicates', () => {
+  const message = (sequence, id = `m${sequence}`) => ({ message_id: id, sequence });
+  // Zapia returns the newest page first; each page is ascending and pages overlap by one.
+  const newest = [message(4), message(5), message(6)];
+  const older = [message(1), message(2), message(3), message(4)];
+  assert.deepEqual(manager.mergeMessagePages([newest, older]).map((item) => item.sequence), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(manager.mergeMessagePages([]), []);
+});
+
+test('formatChatContext keeps the conversation and media, and adds agent activity only on request', () => {
+  const messages = [
+    { message_id: 'a', sequence: 1, role: 'user', message_type: 'TEXT', content: ' Oi ', created_at: '2026-10-15T11:46:11.567823Z' },
+    { message_id: 'b', sequence: 2, role: 'assistant', message_type: 'AGENT_ACTION', content: '{"tool":"search"}', created_at: '2026-10-15T11:46:12Z' },
+    { message_id: 'c', sequence: 3, role: 'assistant', message_type: 'TEXT_INTERMEDIATE', content: 'Pensando', created_at: '2026-10-15T11:46:13Z' },
+    { message_id: 'd', sequence: 4, role: 'user', message_type: 'IMAGE', content: 'veja', file_name: 'foto.png', created_at: '2026-10-15T11:47:00Z' },
+    { message_id: 'e', sequence: 5, role: 'assistant', message_type: 'MEDIA', content: '', caption: null, file_name: null, created_at: '2026-10-15T11:48:00Z' },
+    { message_id: 'f', sequence: 6, role: 'assistant', message_type: 'TEXT', content: 'Olá!', created_at: 'sem data' },
+  ];
+
+  const conversation = manager.formatChatContext('[1] Meu chat', messages);
+  assert.equal(conversation.count, 4);
+  assert.equal(conversation.text, [
+    '# [1] Meu chat',
+    '**User** · 2026-10-15 11:46 UTC\nOi',
+    '**User** · 2026-10-15 11:47 UTC\n[Image: foto.png]\nveja',
+    '**Assistant** · 2026-10-15 11:48 UTC\n[Media]',
+    '**Assistant**\nOlá!',
+  ].join('\n\n'));
+
+  const full = manager.formatChatContext('[1] Meu chat', messages, true);
+  assert.equal(full.count, 6);
+  assert.match(full.text, /\[AGENT_ACTION\] \{"tool":"search"\}/);
+  assert.match(full.text, /\[TEXT_INTERMEDIATE\] Pensando/);
+
+  assert.equal(manager.formatChatContext('Vazio', []).text, '# Vazio\n\n(no messages)');
+});

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.18
+// @version      0.5.19
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -18,6 +18,7 @@
     prefixes: ['✔', '🟡'],
     view: { prioritizeAgents: false, prioritizeIds: false, hideCompleted: false, onlyUnprefixed: false },
     panel: { minimized: false },
+    copy: { includeActivity: false },
     hiddenChats: [],
     shortcuts: {
       'prefix-check': { altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, code: 'KeyC' },
@@ -254,6 +255,59 @@
       && !serverIds.has(key));
   }
 
+  const MEDIA_MESSAGE_TYPES = new Set(['IMAGE', 'MEDIA']);
+
+  // Pages arrive newest first and overlap at their boundaries.
+  function mergeMessagePages(pages) {
+    const byId = new Map();
+    for (const page of pages) {
+      for (const message of page) byId.set(message.message_id, message);
+    }
+    return [...byId.values()].sort((a, b) => a.sequence - b.sequence);
+  }
+
+  function formatMessageTimestamp(iso) {
+    const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(iso ?? '');
+    return match ? `${match[1]} ${match[2]} UTC` : '';
+  }
+
+  // Conversation (text and media) always; agent activity (tool calls, cards,
+  // drafts, intermediate notes) only on request. Returns null when skipped.
+  function formatMessage(message, includeActivity) {
+    const type = message.message_type;
+    const isMedia = MEDIA_MESSAGE_TYPES.has(type);
+    if (type !== 'TEXT' && !isMedia && !includeActivity) return null;
+
+    const time = formatMessageTimestamp(message.created_at);
+    const header = `**${message.role === 'user' ? 'User' : 'Assistant'}**${time ? ` · ${time}` : ''}`;
+    const text = typeof message.content === 'string' ? message.content.trim() : '';
+    let body;
+
+    if (type === 'TEXT') {
+      body = text;
+    } else if (isMedia) {
+      const caption = text || (typeof message.caption === 'string' ? message.caption.trim() : '');
+      body = [
+        `[${type === 'IMAGE' ? 'Image' : 'Media'}${message.file_name ? `: ${message.file_name}` : ''}]`,
+        caption,
+      ].filter(Boolean).join('\n');
+    } else {
+      body = `[${type}] ${text}`.trim();
+    }
+
+    return `${header}\n${body}`;
+  }
+
+  function formatChatContext(title, messages, includeActivity = false) {
+    const rendered = messages
+      .map((message) => formatMessage(message, includeActivity))
+      .filter((entry) => entry !== null);
+    return {
+      count: rendered.length,
+      text: `# ${title}\n\n${rendered.length ? rendered.join('\n\n') : '(no messages)'}`,
+    };
+  }
+
   function buildSupportDiagnosticPayload(error, context = {}) {
     return {
       timestamp: new Date().toISOString(),
@@ -436,12 +490,13 @@
       const view = Object.fromEntries(Object.keys(DEFAULT_PREFERENCES.view)
         .map((key) => [key, stored.view?.[key] === true]));
       const panel = { minimized: stored.panel?.minimized === true };
+      const copy = { includeActivity: stored.copy?.includeActivity === true };
       const hiddenChats = Array.isArray(stored.hiddenChats)
         ? stored.hiddenChats
             .map((item) => (typeof item === 'string' ? { id: item, title: item } : item))
             .filter((item) => item?.id && typeof item.id === 'string')
         : [];
-      return { prefixes, shortcuts, view, panel, hiddenChats };
+      return { prefixes, shortcuts, view, panel, copy, hiddenChats };
     } catch {
       return structuredClone(DEFAULT_PREFERENCES);
     }
@@ -580,6 +635,9 @@
     excludeHiddenChats,
     threadListFromPages,
     findStaleThreadIds,
+    mergeMessagePages,
+    formatChatContext,
+    matchKey,
     buildSupportDiagnosticPayload,
     isUnavailableChatError,
     selectedChats,
@@ -1752,6 +1810,14 @@
       });
     }
 
+    const includeActivityLabel = document.createElement('label');
+    includeActivityLabel.textContent = 'Copy context: include agent activity (tool calls, cards, drafts)';
+    const includeActivity = document.createElement('input');
+    includeActivity.type = 'checkbox';
+    includeActivity.checked = preferences.copy.includeActivity;
+    includeActivityLabel.append(includeActivity);
+    fields.append(includeActivityLabel);
+
     const actions = document.createElement('div');
     actions.className = 'zapia-manager-settings-actions';
 
@@ -1789,7 +1855,7 @@
         }
 
         savePreferences(
-          { ...preferences, prefixes, shortcuts },
+          { ...preferences, prefixes, shortcuts, copy: { includeActivity: includeActivity.checked } },
           window.localStorage,
         );
 
@@ -2421,6 +2487,7 @@
       activeCatalogueId,
       [...selectedChatIds].join('\u0001'),
       staleThreadIds.join(','),
+      copyProgress,
     ].join('|');
     if (panel.dataset.zapiaManagerState === state) return;
     const previousScroll = panel.querySelector('.zapia-manager-chat-list')?.scrollTop
@@ -2615,7 +2682,14 @@
       });
       for (const action of [prefixOk, prefixYellow, remove, clear]) action.disabled = busy;
       remove.disabled = busy || !selectedChatIds.size;
-      actions.append(prefixOk, prefixYellow, remove, clear);
+      const copyContext = button(
+        copyProgress ? `Copying ${copyProgress}…` : 'Copy context',
+        'Copy the title and full conversation of the selected chats to the clipboard',
+        copySelectedChatsContext,
+      );
+      copyContext.classList.add('zapia-manager-copy-context');
+      copyContext.disabled = Boolean(copyProgress);
+      actions.append(copyContext, prefixOk, prefixYellow, remove, clear);
       panel.append(actions);
     }
   }
@@ -2835,6 +2909,10 @@
       .zapia-manager-toast-warning { background: #7b5600; }
       .zapia-manager-stale-notice { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 11px; background: #3a2e12; color: #f0d9a0; border-bottom: 1px solid #292b2b; }
       .zapia-manager-stale-notice span { flex: 1; min-width: 0; }
+      .zapia-manager-copy-context { grid-column: 1 / -1; }
+      .zapia-manager-settings input[type="checkbox"] { inline-size: auto; justify-self: start; }
+      .zapia-manager-context-dialog { inline-size: min(640px, calc(100vw - 32px)); }
+      .zapia-manager-context-text { box-sizing: border-box; inline-size: 100%; block-size: min(50vh, 320px); border: 1px solid #454d4b; border-radius: 5px; background: #242828; color: #f2f3f3; font: 12px/1.4 ui-monospace, monospace; padding: 8px; resize: none; }
     `;
     document.head.append(style);
   }
@@ -2845,19 +2923,40 @@
   const threadPages = new Map();
   let staleThreadIds = [];
   let staleCheckScheduled = false;
+  const SESSION_PARAMS = ['contact_number', 'device_id', 'user_email', 'auth_token'];
+  let apiSession = null;
+  let copyProgress = '';
 
-  function threadsPageRequest(input) {
+  function requestUrl(input) {
     try {
       const raw = typeof input === 'string' || input instanceof URL ? String(input) : input?.url;
-      const url = new URL(raw, location.href);
-      if (!/\/api\/v1\/threads$/u.test(url.pathname)) return null;
-      for (const name of url.searchParams.keys()) {
-        if (!THREAD_LIST_PARAMS.has(name)) return null;
-      }
-      return { before: url.searchParams.get('before') };
+      return new URL(raw, location.href);
     } catch {
       return null;
     }
+  }
+
+  // Keeps the session parameters Zapia itself sends, so the copy action can read
+  // the user's own chats through the same API with the same credentials.
+  function captureApiSession(input) {
+    const url = requestUrl(input);
+    if (!url?.pathname.startsWith('/api/v1/')) return;
+    const params = {};
+    for (const name of SESSION_PARAMS) {
+      const value = url.searchParams.get(name);
+      if (!value) return;
+      params[name] = value;
+    }
+    apiSession = { origin: url.origin, params };
+  }
+
+  function threadsPageRequest(input) {
+    const url = requestUrl(input);
+    if (!url || !/\/api\/v1\/threads$/u.test(url.pathname)) return null;
+    for (const name of url.searchParams.keys()) {
+      if (!THREAD_LIST_PARAMS.has(name)) return null;
+    }
+    return { before: url.searchParams.get('before') };
   }
 
   function recordThreadsPage(request, body) {
@@ -2881,6 +2980,7 @@
     if (typeof originalFetch !== 'function') return;
     const observedFetch = function fetch(...args) {
       const promise = originalFetch.apply(this, args);
+      captureApiSession(args[0]);
       const request = threadsPageRequest(args[0]);
       if (request) {
         promise
@@ -3018,6 +3118,123 @@
     window.location.reload();
   }
 
+  function threadIdsForTitle(title) {
+    const threads = [...threadPages.values()].flatMap((page) => page.threads);
+    const idsWhere = (test) => [...new Set(threads.filter(test).map((thread) => thread.id))];
+    const exact = matchKey(title);
+    const exactIds = idsWhere((thread) => matchKey(thread.label) === exact);
+    if (exactIds.length) return exactIds;
+    // A prefix applied here is not in the observed server label until Zapia reloads it.
+    const bare = matchKey(stripManagedPrefix(title));
+    const bareIds = idsWhere((thread) => matchKey(stripManagedPrefix(thread.label)) === bare);
+    return bareIds.length === 1 ? bareIds : [];
+  }
+
+  async function fetchThreadMessages(threadId) {
+    const pages = [];
+    const seen = new Set();
+    let before = null;
+
+    for (;;) {
+      const url = new URL(`/api/v1/threads/${encodeURI(threadId)}/messages`, apiSession.origin);
+      for (const [name, value] of Object.entries(apiSession.params)) url.searchParams.set(name, value);
+      url.searchParams.set('limit', '100');
+      if (before) url.searchParams.set('before', before);
+
+      const response = await fetch(url, { signal: lifetime.signal });
+      if (response.status === 401 || response.status === 403) {
+        apiSession = null;
+        throw new Error('Zapia rejected the saved session. Open any chat once and try again.');
+      }
+      if (!response.ok) throw new Error(`Zapia answered ${response.status} for a selected chat.`);
+
+      const page = await response.json();
+      pages.push(Array.isArray(page.messages) ? page.messages : []);
+      if (!page.has_more || !page.next_cursor) break;
+      if (seen.has(page.next_cursor)) throw new Error('Zapia returned a repeating message cursor.');
+      seen.add(page.next_cursor);
+      before = page.next_cursor;
+    }
+
+    return mergeMessagePages(pages);
+  }
+
+  function showContextDialog(text) {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'zapia-manager-settings zapia-manager-context-dialog';
+    dialog.dataset.zapiaManagerControl = 'true';
+    protectManagedSurface(dialog);
+
+    const heading = document.createElement('h2');
+    heading.textContent = 'Chat context ready';
+    const area = document.createElement('textarea');
+    area.className = 'zapia-manager-context-text';
+    area.readOnly = true;
+    area.value = text;
+    const actions = document.createElement('div');
+    actions.className = 'zapia-manager-settings-actions';
+    const copy = button('Copy', 'Copy the context to the clipboard', async () => {
+      await navigator.clipboard.writeText(text);
+      toast('Copied to the clipboard.');
+    });
+    const close = button('Close', 'Close this window', () => dialog.close());
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    actions.append(close, copy);
+    dialog.append(heading, area, actions);
+    document.body.append(dialog);
+    dialog.showModal();
+    area.select();
+  }
+
+  async function copySelectedChatsContext() {
+    const chats = selectedChats(knownChats, selectedChatIds);
+    if (copyProgress || !chats.length) return;
+    if (!apiSession) throw new Error('Zapia has not made a request yet. Open any chat and try again.');
+
+    const sections = [];
+    const missing = [];
+    let messageCount = 0;
+
+    try {
+      for (const [index, chat] of chats.entries()) {
+        copyProgress = `${index + 1}/${chats.length}`;
+        renderManagerPanel();
+        const threadIds = threadIdsForTitle(chat.title);
+        if (!threadIds.length) {
+          missing.push(chat.title);
+          continue;
+        }
+        for (const threadId of threadIds) {
+          const context = formatChatContext(
+            chat.title,
+            await fetchThreadMessages(threadId),
+            preferences.copy.includeActivity,
+          );
+          sections.push(context.text);
+          messageCount += context.count;
+        }
+      }
+    } finally {
+      copyProgress = '';
+      renderManagerPanel();
+    }
+
+    if (!sections.length) throw new Error('None of the selected chats were found in the Zapia chat list.');
+    const text = sections.join('\n\n---\n\n');
+    let copied = true;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      copied = false;
+      showContextDialog(text);
+    }
+    const skipped = missing.length ? ` Not found in Zapia: ${missing.join(', ')}.` : '';
+    toast(
+      `${copied ? 'Copied' : 'Prepared'} ${sections.length} chat${sections.length === 1 ? '' : 's'}, ${messageCount} messages.${skipped}`,
+      missing.length ? 'warning' : 'info',
+    );
+  }
+
   function boot() {
     if (!location.pathname.startsWith('/chat')) return;
 
@@ -3039,7 +3256,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.18',
+    version: '0.5.19',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
