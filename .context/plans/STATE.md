@@ -2,11 +2,11 @@
 
 ## Active milestone
 
-Milestone 5, production English UI, non-blocking minimized panel, and quick search with clear button, completed in version 0.5.5.
+Milestone 5, production English UI, non-blocking minimized panel, and inline catalogue search with clear button, completed in version 0.5.6.
 
 ## Active story
 
-US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; added quick search button (`🔍`) right next to the refresh button (`↻`) which collapses the overlay into a transparent non-blocking state while native search is active, exposing search results; transforms the search button into a clear button (`×`) that resets the search and dismisses native search; release version 0.5.5.
+US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; added inline catalogue search triggered by `🔍` which replaces filter chips with an inline text input, filters catalogue results live inside the Manager panel with case/accent insensitivity, transforms the button to `×` for instant query reset and closure; release version 0.5.6.
 ## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.
@@ -20,14 +20,14 @@ US-008 completed: full English public UI localization (headers, settings dialog,
 - `graphify update .` rebuilt `.context/graphify-out` with 30 nodes and 56 edges.
 - LibreWolf 142.0.1 and an enabled Violentmonkey extension are present in the default profile.
 
-## Versão 0.5.5: Busca nativa com overlay transparente e botão de limpar
+## Versão 0.5.6: Busca inline com resultados diretos no painel e botão de limpar
 
-- O botão de busca rápida (`🔍`) agora detecta a abertura da busca nativa do Zapia e minimiza automaticamente o overlay (`.is-native-search-active`), mantendo-o transparente e sem interceptar cliques/roda, deixando os resultados da pesquisa completamente visíveis.
-- O mesmo botão da lupa muda dinamicamente para `×` (`Clear native search`), permitindo limpar o texto digitado e fechar a busca nativa, restaurando a visualização completa do painel do Manager com seleção e scroll preservados.
-- Versão do userscript e export de runtime unificados em `0.5.5`.
-- 33 testes automatizados Node executados e aprovados.
-- Hot reload via CDP e smoke test autenticado no Zapia confirmaram abertura da busca nativa, minimização automática para transparência, alternância do botão para `×`, limpeza/fechamento e restauração do catálogo.
-## Versão 0.5.2: Remoção da proteção contra exclusão de agentes
+- O botão de busca rápida (`🔍`) agora abre um campo de texto inline dentro da própria barra de filtros do Manager, sem acionar a modal nativa do Zapia.
+- A digitação filtra os chats em tempo real diretamente na lista do nosso painel, com normalização insensível a maiúsculas/minúsculas e acentos (ex: busca por `lacan` filtra instantaneamente as conversas correspondentes).
+- O botão da lupa transforma-se dinamicamente em `×` (`Clear search`), limpando a consulta e restaurando os chips de filtros e a listagem normal ao ser clicado ou ao pressionar Escape.
+- Versão do userscript e export de runtime unificados em `0.5.6`.
+- 34 testes automatizados Node executados e aprovados.
+- Hot reload via CDP e smoke test autenticado no Zapia confirmaram busca inline, filtragem instantânea na lista do painel, limpeza e restauração sem interferência na UI externa.
 
 - Versão 0.5.2 removeu a barreira artificial de exclusão para chats de agentes/habilidades (prefix-1).
 - O menu contextual da linha (`⋯`) e a barra de ações em lote mantêm o botão "Excluir" habilitado para qualquer chat selecionado.

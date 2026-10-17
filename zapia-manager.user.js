@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.5
+// @version      0.5.6
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -70,6 +70,8 @@
 
   const selectedChatIds = new Set();
   let deletionQueue = [];
+  let catalogueSearchOpen = false;
+  let catalogueSearchQuery = '';
   const HEADER_CLIP_TOP = 50;
   let observerScheduled = false;
   let settingsOpen = false;
@@ -164,6 +166,19 @@
     return chats.filter(({ title }) =>
       [...filters].some((filter) => chatMatchesFilter(title, filter, prefixes)),
     );
+  }
+
+  function normalizeSearchText(value) {
+    return normalizeSpace(value)
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLocaleLowerCase();
+  }
+
+  function filterChatsByQuery(chats, query) {
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return chats;
+    return chats.filter(({ title }) => normalizeSearchText(title).includes(normalizedQuery));
   }
 
   function catalogueView(chats, filters, prefixes, view) {
@@ -452,6 +467,8 @@
     cleanChatTitle,
     chatMatchesFilter,
     filterChats,
+    normalizeSearchText,
+    filterChatsByQuery,
     mergeChatList,
     catalogueView,
     pinnedBetweenSections,
@@ -1731,7 +1748,10 @@
   }
 
   function filteredChats() {
-    return catalogueView(knownChats, activeFilters, preferences.prefixes, preferences.view);
+    return filterChatsByQuery(
+      catalogueView(knownChats, activeFilters, preferences.prefixes, preferences.view),
+      catalogueSearchQuery,
+    );
   }
 
   function nextFrame() {
@@ -2048,55 +2068,32 @@
     renderManagerPanel();
   }
 
-  function nativeSearchInput() {
-    return [...document.querySelectorAll('input')]
-      .find((input) => {
-        if (!isVisible(input) || input.closest('[data-zapia-manager-control]')) return false;
-        const label = normalizeSpace(input.getAttribute('aria-label') || input.placeholder || '');
-        return /^(?:buscar|search)$/iu.test(label);
-      }) ?? null;
+  function openCatalogueSearch() {
+    catalogueSearchOpen = true;
+    renderManagerPanel();
+    queueMicrotask(() => {
+      const input = document.querySelector('.zapia-manager-search-input');
+      input?.focus();
+    });
   }
 
-  function nativeSearchButton() {
-    return [...document.querySelectorAll('flt-semantics[role="button"]')]
-      .find((element) => {
-        if (element.closest('[data-zapia-manager-control]')) return false;
-        const label = normalizeSpace(element.textContent || element.getAttribute('aria-label') || '');
-        return label === 'Buscar' || label === 'Search';
-      }) ?? null;
-  }
-
-  async function openNativeSearch() {
-    const trigger = nativeSearchButton();
-    if (!trigger) throw new Error('Zapia did not expose native search.');
-    trigger.click();
-    await waitFor(nativeSearchInput, 'the native search input', 3000);
+  function clearCatalogueSearch() {
+    catalogueSearchOpen = false;
+    catalogueSearchQuery = '';
+    pruneHiddenSelection();
     renderManagerPanel();
   }
 
-  async function clearNativeSearch() {
-    const nativeDismiss = [...document.querySelectorAll('flt-semantics[role="button"]')]
-      .find((el) => {
-        const label = normalizeSpace(el.textContent || el.getAttribute('aria-label') || '');
-        return /^(?:fechar|close)$/iu.test(label) || /fechar busca/iu.test(label);
-      });
-    if (nativeDismiss) {
-      nativeDismiss.click();
-    } else {
-      const input = nativeSearchInput();
-      if (input) {
-        setInputValue(input, '');
-        input.focus();
-        for (const type of ['keydown', 'keyup']) {
-          input.dispatchEvent(new KeyboardEvent(type, {
-            key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
-            bubbles: true, cancelable: true,
-          }));
-        }
-      }
-    }
-    await waitFor(() => !nativeSearchInput(), 'the native search input to close', 3000).catch(() => {});
+  function setCatalogueSearchQuery(query) {
+    catalogueSearchQuery = query;
+    pruneHiddenSelection();
     renderManagerPanel();
+    queueMicrotask(() => {
+      const input = document.querySelector('.zapia-manager-search-input');
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
   }
 
   let activeRowMenu = null;
@@ -2201,13 +2198,12 @@
       document.body.append(panel);
     }
     syncNativeSidebarLayout();
-    const nativeSearchActive = Boolean(nativeSearchInput());
-    const minimized = preferences.panel.minimized && !nativeSearchActive;
+    const minimized = preferences.panel.minimized;
     panel.classList.toggle('is-minimized', minimized);
-    panel.classList.toggle('is-native-search-active', nativeSearchActive);
     const state = [
       JSON.stringify(preferences),
-      nativeSearchActive,
+      catalogueSearchOpen,
+      catalogueSearchQuery,
       [...activeFilters].sort().join(','),
       chatScanRunning,
       chatActionDepth > 0,
@@ -2232,7 +2228,7 @@
     summary.setAttribute('role', 'status');
     summary.textContent = chatScanRunning ? 'Loading…'
       : selectedChatIds.size ? `${selectedChatIds.size} selected`
-        : activeFilters.size || preferences.view.onlyUnprefixed ? `${chats.length} of ${knownChats.length}` : String(knownChats.length);
+        : activeFilters.size || preferences.view.onlyUnprefixed || catalogueSearchQuery ? `${chats.length} of ${knownChats.length}` : String(knownChats.length);
     headingCopy.append(title, summary);
     const headingActions = document.createElement('div');
     headingActions.className = 'zapia-manager-panel-heading-actions';
@@ -2252,40 +2248,57 @@
 
     const filters = document.createElement('div');
     filters.className = 'zapia-manager-filters';
-    const unprefixed = button(
-      '\u00a0',
-      'Show only chats without a prefix while keeping pinned chats',
-      () => setViewOption('onlyUnprefixed', !preferences.view.onlyUnprefixed),
-    );
-    unprefixed.classList.add('zapia-manager-filter', 'zapia-manager-unprefixed-filter');
-    unprefixed.classList.toggle('is-active', preferences.view.onlyUnprefixed);
-    unprefixed.setAttribute('aria-pressed', String(preferences.view.onlyUnprefixed));
-    filters.append(unprefixed);
-    for (const [key, label, hint] of [
-      ['numbered', '[nº]', 'Show chats with a numeric [id]'],
-      ['prefix-0', preferences.prefixes[0], 'Show chats with the first emoji'],
-      ['prefix-1', preferences.prefixes[1], 'Show chats with the second emoji'],
-    ]) {
-      const chip = button(label, hint, () => toggleFilter(key));
-      chip.classList.add('zapia-manager-filter');
-      chip.classList.toggle('is-active', activeFilters.has(key));
-      chip.setAttribute('aria-pressed', String(activeFilters.has(key)));
-      filters.append(chip);
+    if (catalogueSearchOpen) {
+      const input = document.createElement('input');
+      input.className = 'zapia-manager-search-input';
+      input.dataset.zapiaManagerControl = 'true';
+      input.type = 'search';
+      input.value = catalogueSearchQuery;
+      input.placeholder = 'Search chats';
+      input.setAttribute('aria-label', 'Search chats');
+      input.disabled = busy;
+      input.addEventListener('input', () => setCatalogueSearchQuery(input.value));
+      input.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        clearCatalogueSearch();
+      });
+      filters.append(input);
+    } else {
+      const unprefixed = button(
+        '\u00a0',
+        'Show only chats without a prefix while keeping pinned chats',
+        () => setViewOption('onlyUnprefixed', !preferences.view.onlyUnprefixed),
+      );
+      unprefixed.classList.add('zapia-manager-filter', 'zapia-manager-unprefixed-filter');
+      unprefixed.classList.toggle('is-active', preferences.view.onlyUnprefixed);
+      unprefixed.setAttribute('aria-pressed', String(preferences.view.onlyUnprefixed));
+      filters.append(unprefixed);
+      for (const [key, label, hint] of [
+        ['numbered', '[nº]', 'Show chats with a numeric [id]'],
+        ['prefix-0', preferences.prefixes[0], 'Show chats with the first emoji'],
+        ['prefix-1', preferences.prefixes[1], 'Show chats with the second emoji'],
+      ]) {
+        const chip = button(label, hint, () => toggleFilter(key));
+        chip.classList.add('zapia-manager-filter');
+        chip.classList.toggle('is-active', activeFilters.has(key));
+        chip.setAttribute('aria-pressed', String(activeFilters.has(key)));
+        filters.append(chip);
+      }
     }
     const search = button(
-      nativeSearchActive ? '×' : '🔍',
-      nativeSearchActive ? 'Clear native search' : 'Search chats',
-      nativeSearchActive ? clearNativeSearch : openNativeSearch,
+      catalogueSearchOpen ? '×' : '🔍',
+      catalogueSearchOpen ? 'Clear search' : 'Search chats',
+      catalogueSearchOpen ? clearCatalogueSearch : openCatalogueSearch,
     );
     search.classList.add('zapia-manager-search');
-    search.classList.toggle('is-clear', nativeSearchActive);
+    search.classList.toggle('is-clear', catalogueSearchOpen);
     search.disabled = busy;
     const refresh = button('↻', 'Refresh the complete chat list', scanAllChats);
     refresh.classList.add('zapia-manager-refresh');
     refresh.disabled = busy;
     filters.append(search, refresh);
     panel.append(filters);
-    if (nativeSearchActive) return;
 
     const advanced = document.createElement('details');
     advanced.className = 'zapia-manager-view-options';
@@ -2523,20 +2536,14 @@
         font: 13px/1.35 Inter, system-ui, sans-serif; pointer-events: auto !important;
       }
       .zapia-manager-sidebar.is-sidebar-hidden { visibility: hidden; pointer-events: none !important; }
-      .zapia-manager-sidebar.is-minimized,
-      .zapia-manager-sidebar.is-native-search-active { height: auto !important; overflow: visible; border: 0; background: transparent; pointer-events: none !important; }
+      .zapia-manager-sidebar.is-minimized { height: auto !important; overflow: visible; border: 0; background: transparent; pointer-events: none !important; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading { justify-content: flex-end; min-block-size: 28px; padding: 4px 12px; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading-copy,
       .zapia-manager-sidebar.is-minimized .zapia-manager-settings-trigger { display: none; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading-actions,
       .zapia-manager-sidebar.is-minimized .zapia-manager-minimize-trigger { pointer-events: auto !important; }
-      .zapia-manager-sidebar.is-native-search-active .zapia-manager-panel-heading { display: none; }
       .zapia-manager-panel-heading { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; }
       .zapia-manager-filters { flex: 0 0 auto; display: flex; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid #292b2b; }
-      .zapia-manager-sidebar.is-native-search-active .zapia-manager-filters { min-block-size: 36px; padding: 4px 12px; border: 0; pointer-events: none !important; }
-      .zapia-manager-sidebar.is-native-search-active .zapia-manager-filter,
-      .zapia-manager-sidebar.is-native-search-active .zapia-manager-refresh { visibility: hidden; pointer-events: none !important; }
-      .zapia-manager-sidebar.is-native-search-active .zapia-manager-search { pointer-events: auto !important; }
       .zapia-manager-button { border: 1px solid #373b3b; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font: inherit; min-block-size: 28px; padding: 4px 7px; pointer-events: auto !important; }
       .zapia-manager-button:hover:not(:disabled) { background: #2a2e2e; }
       .zapia-manager-button:focus-visible { outline: 2px solid #32bfa6; outline-offset: 2px; }
@@ -2545,6 +2552,9 @@
       .zapia-manager-filter { min-inline-size: 32px; font-size: 12px; min-block-size: 26px; }
       .zapia-manager-filter.is-active { background: #24443d; border-color: #34a38d; }
       .zapia-manager-search { margin-inline-start: auto; min-block-size: 26px; min-inline-size: 28px; }
+      .zapia-manager-search.is-clear { margin-inline-start: 0; }
+      .zapia-manager-search-input { box-sizing: border-box; flex: 1 1 auto; min-inline-size: 0; border: 1px solid #454d4b; border-radius: 6px; background: #242828; color: inherit; font: inherit; padding: 4px 7px; }
+      .zapia-manager-search-input:focus-visible { outline: 2px solid #32bfa6; outline-offset: 1px; }
       .zapia-manager-refresh { min-block-size: 26px; min-inline-size: 28px; }
       .zapia-manager-view-options { flex: 0 0 auto; padding: 0 12px 4px; border-bottom: 1px solid #292b2b; font-size: 11px; color: #cbd4dc; }
       .zapia-manager-view-options summary { cursor: pointer; padding: 4px 0; color: #b3baba; user-select: none; }
@@ -2614,7 +2624,7 @@
   }
 
   window.__zapiaManager = Object.freeze({
-    version: '0.5.5',
+    version: '0.5.6',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

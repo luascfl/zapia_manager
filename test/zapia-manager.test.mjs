@@ -112,6 +112,22 @@ test('active filters combine with OR and an empty set shows everything', () => {
   assert.deepEqual(manager.filterChats(chats, new Set(['numbered', 'prefix-1']), prefixes).map((c) => c.id), ['a', 'b']);
 });
 
+test('filterChatsByQuery performs accent and case-insensitive matching in catalogue order', () => {
+  const chats = [
+    { id: '1', title: '[2] Capítulo de Larissa: preparar releitura de Lacan' },
+    { id: '2', title: 'Releitura de Lacan e principais críticas' },
+    { id: '3', title: '🟡 Zotero' },
+    { id: '4', title: 'Álbum e crônica' },
+  ];
+
+  assert.deepEqual(manager.filterChatsByQuery(chats, 'lacan').map((c) => c.id), ['1', '2']);
+  assert.deepEqual(manager.filterChatsByQuery(chats, 'LACAN').map((c) => c.id), ['1', '2']);
+  assert.deepEqual(manager.filterChatsByQuery(chats, 'capitulo').map((c) => c.id), ['1']);
+  assert.deepEqual(manager.filterChatsByQuery(chats, 'album').map((c) => c.id), ['4']);
+  assert.deepEqual(manager.filterChatsByQuery(chats, ''), chats);
+  assert.deepEqual(manager.filterChatsByQuery(chats, '   '), chats);
+});
+
 test('merging scan windows keeps sidebar order and never duplicates', () => {
   const chat = (id) => ({ id, title: id });
   let list = manager.mergeChatList([], [chat('a'), chat('b'), chat('c')]);
