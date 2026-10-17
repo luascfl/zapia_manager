@@ -135,3 +135,9 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 
 - Version 0.2.15 adds the compact header hint `Atual: ✔ (Alt+Shift+C) · 🟡 (Alt+Shift+Y) · excluir (Alt+Shift+X)`.
 - Tampermonkey saved 0.2.15. An authenticated Zapia panel screenshot confirms the hint is visible above the selectable-chat list; Node syntax and 13 tests passed.
+
+## Anchored native menu actions, 2026-10-16
+
+- User reported that the keyboard shortcut sometimes opens a link inside the chat. The native menu actions were located with unanchored regexes (`edit`, `remove`, `delete`) over every visible semantic button, so link or card text such as `Edital...` or a URL ending in `/edit` could match before the real menu item.
+- Version 0.2.26 matches only the exact labels `Renomear`/`Rename` and `Excluir`/`Delete`, and takes the last match (the menu overlay is the most recent node). The now-unused `EDIT_PATTERN` is removed. A regression test covers `Edital...`, a `/edit` URL and a long sentence containing `excluir`.
+- The cause is inferred from the code: it could not be reproduced live because the restarted automation Chrome had no Zapia Manager installed and an empty chat list. Syntax check and 16 Node tests passed.

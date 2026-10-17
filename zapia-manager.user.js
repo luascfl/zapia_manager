@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.2.25
+// @version      0.2.26
 // @description  Manage visible Zapia chats, native actions, shortcuts, and dynamic browser tab titles.
 // @match        https://app.zapia.com/chat*
 // @match        https://app.zapia.com/chat/*
@@ -56,8 +56,9 @@
 
   const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/u;
   const MENU_BUTTON_PATTERN = /^(?:menu|more|options|opções|mais ações|actions)$/i;
-  const EDIT_PATTERN = /(?:renomear|editar(?:\s+(?:nome|chat|conversa))?|rename|edit(?:\s+(?:name|chat|conversation))?)/i;
   const DELETE_PATTERN = /(?:excluir|apagar|deletar|delete|remove)/i;
+  const MENU_RENAME_ACTION = /^(?:renomear|rename)$/i;
+  const MENU_DELETE_ACTION = /^(?:excluir|delete)$/i;
   const HOVER_ACTION_PATTERN = /^(?:mais ações|more actions)$/i;
 
   const selectedChatIds = new Set();
@@ -347,6 +348,8 @@
     shortcutFromEvent,
     shortcutValidationError,
     loadPreferences,
+    MENU_RENAME_ACTION,
+    MENU_DELETE_ACTION,
   };
 
   if (typeof module !== 'undefined' && module.exports) {
@@ -758,12 +761,12 @@
   }
 
   function visibleSemanticMenuAction(pattern) {
-    return semanticButtons().find((element) => {
+    return semanticButtons().filter((element) => {
       const group = element.parentElement;
 
       return group?.getAttribute('role') === 'group'
         && pattern.test(semanticLabel(element));
-    }) ?? null;
+    }).at(-1) ?? null;
   }
 
   function visibleMenuAction(pattern) {
@@ -980,7 +983,7 @@
     }
 
     const editAction = await waitFor(
-      () => visibleMenuAction(EDIT_PATTERN),
+      () => visibleMenuAction(MENU_RENAME_ACTION),
       'the native rename action',
     );
 
@@ -1016,7 +1019,7 @@
     }
 
     const deleteAction = await waitFor(
-      () => visibleMenuAction(DELETE_PATTERN),
+      () => visibleMenuAction(MENU_DELETE_ACTION),
       'the native delete menu action',
     );
 

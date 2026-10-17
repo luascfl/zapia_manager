@@ -44,6 +44,14 @@ test('shortcut validation rejects unavailable browser shortcuts', () => {
   assert.equal(manager.shortcutValidationError(manager.parseShortcut('Alt+Shift+C')), null);
 });
 
+test('native menu actions match only their exact label, never link text', () => {
+  assert.equal(manager.MENU_RENAME_ACTION.test('Renomear'), true);
+  assert.equal(manager.MENU_DELETE_ACTION.test('Excluir'), true);
+  assert.equal(manager.MENU_RENAME_ACTION.test('Edital do programa Mais Futuro'), false);
+  assert.equal(manager.MENU_RENAME_ACTION.test('docs.google.com/document/d/abc/edit'), false);
+  assert.equal(manager.MENU_DELETE_ACTION.test('Como remover ou excluir inscrição'), false);
+});
+
 test('normalization supports text from browser controls', () => {
   assert.equal(manager.normalizeSpace('  Excluir\n chat  '), 'Excluir chat');
 });
