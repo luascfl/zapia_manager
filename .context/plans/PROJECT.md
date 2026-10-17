@@ -11,6 +11,8 @@ A Tampermonkey/Violentmonkey userscript that adds deliberate chat-labeling, bulk
 - Add per-chat selection checkboxes and a selected-count toolbar.
 - Delete through each chat’s native menu and confirm only inside Zapia’s own `Excluir conversa?` dialog, one chat at a time (changed on 2026-09-17 at the user’s request; it previously stopped at the dialog).
 - Act on the current chat through configurable shortcuts (defaults `Alt+Shift+C`, `Alt+Shift+Y`, `Alt+Shift+X`).
+- Render all discovered sidebar chats as searchable DOM text and filter by numeric id or either configured emoji.
+- Reinject local userscript source during development without reloading Zapia or rescanning a completed catalogue.
 - Remain responsive to Zapia SPA updates through a `MutationObserver`.
 
 ## Safety boundaries

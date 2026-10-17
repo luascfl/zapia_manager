@@ -58,6 +58,22 @@
       "priority": "medium",
       "passes": false,
       "notes": "Blocked on a repro. 15 chats exposed one `Mais ações` and no link nodes; Alt+C produced only `Mais ações` then `Renomear` clicks. Message bodies do not render in the automation Chrome. Needs from the user: which shortcut, link domain, same or new tab, mouse position. Update 2026-10-17: messages now render in the automation Chrome and a chat with a link exists (`Abra o roteiro no Google Docs`, chat `[2] Capítulo de Larissa...`), so a repro attempt is possible."
+    },
+    {
+      "id": "US-005",
+      "title": "Search and filter the full chat catalogue with fast browser iteration",
+      "description": "As a Zapia user, I can find all loaded sidebar chats using browser find and filters; development reloads replace only the userscript without reloading Zapia or repeating the catalogue scan.",
+      "acceptanceCriteria": [
+        "Scan the native sidebar to both ends and render complete discovered chat titles as real DOM text.",
+        "Filter by leading [number], configured emoji 1 and configured emoji 2, including checkmark variation selectors; combined filters use OR.",
+        "Selected offscreen chats can be revealed before invoking native actions; filter changes discard hidden selections.",
+        "Userscript replacement disposes its timers, listeners and observers while preserving loaded chats, filters, selection and panel scroll.",
+        "A single canonical development command reloads the local source into the exact authenticated CDP tab without page navigation or a repeated scan.",
+        "Browser evidence covers text search, filters and repeated hot replacement; syntax and behavioral tests pass."
+      ],
+      "priority": "high",
+      "passes": true,
+      "notes": "0.3.0. Explicit two-direction sidebar traversal discovered 113 unique chats in 12.786 s. Browser smoke verified 5 numbered, 56 emoji-1 and 24 emoji-2 matches; OR filtering and hidden-selection removal; DOM text search reached an offscreen panel title. Repeated source-only replacement preserved catalogue, filters, selection and scroll, retained one keyboard listener/panel/style, and disposed all old owned resources. Final replacement took 57 ms with no document reload or scan. An offscreen selected chat reached its own rename dialog via the header menu; save was blocked and the dialog cancelled. Syntax checks and 23 Node tests passed. Local sanitized evidence: .context/workflow/ralph/evidence/us-005.json. The injector updates the current page, not the extension installation."
     }
   ]
 }

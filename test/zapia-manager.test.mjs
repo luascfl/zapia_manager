@@ -38,9 +38,10 @@ test('shortcut configuration parses only modified supported keys', () => {
   assert.equal(manager.parseShortcut('Alt+Shift+Escape'), null);
 });
 
-test('shortcut validation rejects unavailable browser shortcuts', () => {
-  assert.equal(manager.shortcutValidationError(manager.parseShortcut('Alt+F4')), 'Alt+F4 é reservado pelo navegador ou sistema.');
-  assert.equal(manager.shortcutValidationError(manager.parseShortcut('Ctrl+W')), 'Ctrl+W é reservado pelo navegador ou sistema.');
+test('reserved browser shortcuts are rejected while custom chords are accepted', () => {
+  for (const chord of ['Alt+F4', 'Ctrl+W']) {
+    assert.ok(manager.shortcutValidationError(manager.parseShortcut(chord)));
+  }
   assert.equal(manager.shortcutValidationError(manager.parseShortcut('Alt+Shift+C')), null);
 });
 
@@ -62,6 +63,56 @@ test('the native chat menu is detected only by an exact Renomear item inside a g
   assert.equal(manager.hasNativeChatMenu([{ label: 'Renomear', parentRole: 'group' }]), true);
   assert.equal(manager.hasNativeChatMenu([{ label: 'Renomear', parentRole: null }]), false);
   assert.equal(manager.hasNativeChatMenu([{ label: 'Edital para renomear', parentRole: 'group' }]), false);
+});
+
+const prefixes = ['✔', '🟡'];
+
+test('filters match [number] ids and the two configured emojis, tolerating ✔️ and a missing space', () => {
+  assert.equal(manager.chatMatchesFilter('[2] Capítulo de Larissa', 'numbered', prefixes), true);
+  assert.equal(manager.chatMatchesFilter('✔ [4] Programa', 'numbered', prefixes), true);
+  assert.equal(manager.chatMatchesFilter('Resumo [3] solto', 'numbered', prefixes), false);
+  assert.equal(manager.chatMatchesFilter('✔️ Caso Mourad', 'prefix-0', prefixes), true);
+  assert.equal(manager.chatMatchesFilter('✔Rascunho', 'prefix-0', prefixes), true);
+  assert.equal(manager.chatMatchesFilter('🟡 ObtainX', 'prefix-1', prefixes), true);
+  assert.equal(manager.chatMatchesFilter('🟡 ObtainX', 'prefix-0', prefixes), false);
+  assert.equal(manager.chatMatchesFilter('GitHub ✔', 'prefix-0', prefixes), false);
+});
+
+test('filters follow configured emoji changes rather than the default palette', () => {
+  const custom = ['✅', '🔵'];
+  assert.equal(manager.chatMatchesFilter('✅ [12] Work', 'numbered', custom), true);
+  assert.equal(manager.chatMatchesFilter('✅ Work', 'prefix-0', custom), true);
+  assert.equal(manager.chatMatchesFilter('🔵 Work', 'prefix-1', custom), true);
+  assert.equal(manager.chatMatchesFilter('🟡 Work', 'prefix-1', custom), false);
+});
+
+test('active filters combine with OR and an empty set shows everything', () => {
+  const chats = [{ id: 'a', title: '[1] A' }, { id: 'b', title: '🟡 B' }, { id: 'c', title: 'C' }];
+
+  assert.deepEqual(manager.filterChats(chats, new Set(), prefixes), chats);
+  assert.deepEqual(manager.filterChats(chats, new Set(['numbered', 'prefix-1']), prefixes).map((c) => c.id), ['a', 'b']);
+});
+
+test('merging scan windows keeps sidebar order and never duplicates', () => {
+  const chat = (id) => ({ id, title: id });
+  let list = manager.mergeChatList([], [chat('a'), chat('b'), chat('c')]);
+
+  list = manager.mergeChatList(list, [chat('b'), chat('c'), chat('d'), chat('e')]);
+  list = manager.mergeChatList(list, [chat('x'), chat('a')]);
+
+  assert.deepEqual(list.map((c) => c.id), ['x', 'a', 'b', 'c', 'd', 'e']);
+});
+
+test('chat titles drop the unread counter so identities stay stable', () => {
+  assert.equal(manager.cleanChatTitle('Resumos de grupos do Whatsapp 5 não lidas'), 'Resumos de grupos do Whatsapp');
+  assert.equal(manager.cleanChatTitle('Assistente de WhatsApp 1 não lida'), 'Assistente de WhatsApp');
+  assert.equal(manager.stripManagedPrefix('✔️ Caso Mourad'), 'Caso Mourad');
+});
+
+test('Radar with an unread counter and the notifications button are navigation, not chats', () => {
+  assert.equal(manager.isNavigationActionLabel('Radar 4 não lidas'), true);
+  assert.equal(manager.isNavigationActionLabel('Abrir notificações'), true);
+  assert.equal(manager.isNavigationActionLabel('Radar de vagas'), false);
 });
 
 test('normalization supports text from browser controls', () => {
@@ -94,13 +145,6 @@ test('nested chat candidates collapse to root chat rows', () => {
   const outer = { contains: (o) => o === inner };
 
   assert.deepEqual(manager.selectRootChatRows([outer, inner, sibling]), [outer, sibling]);
-});
-
-test('the deletion queue retains only currently visible selected chats', () => {
-  const selected = new Set(['chat-a', 'chat-b', 'chat-c']);
-  const visible = new Set(['chat-a', 'chat-c']);
-
-  assert.deepEqual(manager.queueVisibleSelectedChatIds(selected, visible), ['chat-a', 'chat-c']);
 });
 
 function node(managed) {

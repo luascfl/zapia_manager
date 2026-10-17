@@ -1,90 +1,51 @@
----
-type: doc
-name: development-workflow
-description: Day-to-day engineering processes, branching, and contribution guidelines
-category: workflow
-generated: 2026-09-06
-status: unfilled
-scaffoldVersion: "2.0.0"
----
-## Development Workflow
+# Development workflow
 
-This document outlines the day-to-day engineering process for contributing to this repository.
+## Runtime and checks
 
-Following these guidelines ensures consistent code quality and smooth collaboration across the team.
+The production artifact is `zapia-manager.user.js`, a self-contained userscript. There is no build step or package install.
 
-## Branching & Releases
-
-**Branching Model**: Feature branches off `main`
-
-- `main` — Production-ready code, always deployable
-- `feature/*` — New features and enhancements
-- `fix/*` — Bug fixes
-- `chore/*` — Maintenance and tooling updates
-
-**Release Process**:
-1. Features are developed in branches
-2. PRs require review and passing CI
-3. Merged PRs are deployed automatically (or tagged for release)
-
-**Versioning**: Semantic versioning (semver) - MAJOR.MINOR.PATCH
-
-## Local Development
-
-**Setup**:
-```bash
-# Clone and install
-git clone <repository-url>
-cd <project-name>
-npm install
+```sh
+node --check zapia-manager.user.js
+node --check scripts/reload-userscript.mjs
+node --test test/zapia-manager.test.mjs
 ```
 
-**Daily Commands**:
-- `npm run dev` — Start development server/watch mode
-- `npm run build` — Build for production
-- `npm run test` — Run test suite
-- `npm run lint` — Check code style
+## Replace only the userscript
 
-**Before Committing**:
-```bash
-npm run lint && npm run test && npm run build
+Use Node.js 22+ (global `WebSocket`) and an existing authenticated Chrome session on CDP port 9222 with Zapia open. The canonical development command is:
+
+```sh
+node scripts/reload-userscript.mjs
 ```
 
-## Code Review Expectations
+The command reads the current file, checks syntax, and replaces only the userscript. It does not reload Zapia, reinstall an extension, or restart the chat catalogue scan. It preserves the catalogue, filters, selection, collapse state and list scroll. The previous instance disposes its own document listeners, timeouts, intervals, frames, pending waits and observers before the new instance mounts. A native rename/delete action must finish before replacement is permitted.
 
-**PR Requirements**:
-- Clear description of changes and motivation
-- Tests for new functionality
-- Documentation updates for API changes
-- Passing CI checks
+When several Zapia tabs exist, select the exact CDP target id:
 
-**Review Checklist**:
-- [ ] Code follows project conventions
-- [ ] Tests cover the changes adequately
-- [ ] No security vulnerabilities introduced
-- [ ] Documentation is updated
-- [ ] Commit messages follow conventions
+```sh
+node scripts/reload-userscript.mjs --target CDP_TARGET_ID
+```
 
-**Approval**: At least one approving review required before merge.
+For an old injected instance without a cleanup hook, migrate once:
 
-See [AGENTS.md](../../AGENTS.md) for AI assistant collaboration guidelines.
+```sh
+node scripts/reload-userscript.mjs --migrate
+```
 
-## Onboarding Tasks
+This one-time migration snapshots the legacy panel into session storage and reloads the document to remove untracked legacy listeners. All subsequent runs omit `--migrate` and replace in place. Run migration only after the old scan finishes and with all filters disabled, so its DOM snapshot contains the complete known catalogue.
 
-**First Steps for New Contributors**:
-1. Read the [Project Overview](./project-overview.md)
-2. Set up local development environment
-3. Run the test suite to verify setup
-4. Look for issues labeled `good-first-issue` or `help-wanted`
+This command applies source to the current page only. It does not persist updates into Tampermonkey or Violentmonkey; reloading the page restores the extension-installed version until that installation is updated separately.
 
-**Helpful Resources**:
-- [Architecture Notes](./architecture.md) — System design overview
-- [Testing Strategy](./testing-strategy.md) — How to write tests
-- [CONTRIBUTING.md](../../CONTRIBUTING.md) — Contribution guidelines
+## Browser validation
 
-## Related Resources
+- Reuse the exact test tab; do not navigate/reload it for each code edit.
+- Observe the command's `documentReloaded: false`, catalogue count, and single panel/style instance.
+- Open the panel before browser text search. All loaded titles are real DOM text, including rows below the list viewport. Active filters restrict the searchable list.
+- Filters `[nº]`, emoji 1 and emoji 2 use OR. Switching filters drops hidden selections.
+- `Atualizar lista` explicitly repeats native sidebar traversal. A source reload reuses the completed catalogue instead.
+- For offscreen action checks, block the native save/delete confirmation and cancel the native dialog. Do not mutate user data merely to prove discovery.
+- Compare retained state and ensure the old runtime reports zero owned resources after replacement.
 
-<!-- Link to related documents for cross-navigation. -->
+## Cycle closeout
 
-- [testing-strategy.md](./testing-strategy.md)
-- [tooling.md](./tooling.md)
+Follow one story in `.context/workflow/prd.json`. Store evidence under `.context/workflow/ralph/evidence/`, update STATE and the technical docs, run `graphify update .` after code changes, and commit only files owned by the story. Do not push unless requested.

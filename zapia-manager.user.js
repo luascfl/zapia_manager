@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.2.28
-// @description  Manage visible Zapia chats, native actions, shortcuts, and dynamic browser tab titles.
+// @version      0.3.0
+// @description  Search and filter the full Zapia chat catalogue, manage native actions and configurable shortcuts, and synchronize browser tab titles.
 // @match        https://app.zapia.com/chat*
 // @match        https://app.zapia.com/chat/*
 // @run-at       document-start
@@ -42,6 +42,7 @@
     'Indique e ganhe',
     'Fixados',
     'Conversas',
+    'Abrir notificações',
   ]);
 
   const PRIMARY_NAVIGATION_LABELS = new Set([
@@ -54,6 +55,7 @@
     'Indique e ganhe',
   ]);
   const PROMO_NAVIGATION_PATTERN = /^ganhe o zapia pro\b/i;
+  const RADAR_NAVIGATION_PATTERN = /^Radar(?:\s+\d+(?:\s+não\s+lidas?)?)?$/u;
 
   const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/u;
   const MENU_BUTTON_PATTERN = /^(?:menu|more|options|opções|mais ações|actions)$/i;
@@ -87,7 +89,7 @@
     if (
       NAVIGATION_ACTION_LABELS.has(normalized)
       || PROMO_NAVIGATION_PATTERN.test(normalized)
-      || /^Radar(?:\s+\d+)?$/u.test(normalized)
+      || RADAR_NAVIGATION_PATTERN.test(normalized)
     ) {
       return true;
     }
@@ -96,10 +98,13 @@
   }
 
   function cleanChatTitle(text) {
-    return text.replace(
-      /\s*(?:Renomear|Excluir|Fixar|Desafixar|Reportar|Mais ações|Compartilhar|Ouvir|Boa Resposta|Resposta ruim|Editar|Opções|Menu|Share|Delete|Rename|Pin|Unpin|Options|\.\.\.)+$/gi,
-      '',
-    ).trim();
+    return text
+      .replace(
+        /\s*(?:Renomear|Excluir|Fixar|Desafixar|Reportar|Mais ações|Compartilhar|Ouvir|Boa Resposta|Resposta ruim|Editar|Opções|Menu|Share|Delete|Rename|Pin|Unpin|Options|\.\.\.)+$/gi,
+        '',
+      )
+      .replace(/\s+\d+\s+não\s+lidas?$/iu, '')
+      .trim();
   }
 
   function configuredPrefixes() {
@@ -117,7 +122,7 @@
       .join('|');
 
     return String(title ?? '').replace(
-      new RegExp(`^(?:${escaped})\\s*`, 'u'),
+      new RegExp(`^(?:${escaped})\\uFE0F?\\s*`, 'u'),
       '',
     );
   }
@@ -128,6 +133,52 @@
     }
 
     return `${prefix}${stripManagedPrefix(title).trimStart()}`;
+  }
+
+  function normalizeEmoji(value) {
+    return String(value ?? '').replace(/\uFE0F/gu, '');
+  }
+
+  function chatMatchesFilter(title, filter, prefixes) {
+    const plain = normalizeEmoji(title).trimStart();
+
+    if (filter === 'numbered') {
+      const prefix = [...DEFAULT_PREFERENCES.prefixes, ...prefixes]
+        .map(normalizeEmoji)
+        .find((emoji) => plain.startsWith(emoji));
+      return /^\[\d+\]/u.test((prefix ? plain.slice(prefix.length) : plain).trimStart());
+    }
+
+    const index = filter === 'prefix-0' ? 0 : filter === 'prefix-1' ? 1 : -1;
+
+    return index >= 0
+      && plain.startsWith(normalizeEmoji(prefixes[index]));
+  }
+
+  function filterChats(chats, filters, prefixes) {
+    if (!filters.size) return chats;
+
+    return chats.filter(({ title }) =>
+      [...filters].some((filter) => chatMatchesFilter(title, filter, prefixes)),
+    );
+  }
+
+  function mergeChatList(existing, found) {
+    const result = [...existing];
+    let anchor = -1;
+
+    for (const chat of found) {
+      const at = result.findIndex(({ id }) => id === chat.id);
+
+      if (at >= 0) {
+        anchor = at;
+      } else {
+        anchor += 1;
+        result.splice(anchor, 0, chat);
+      }
+    }
+
+    return result;
   }
 
   function canActivateDeleteCandidate({ containerRole, label }) {
@@ -179,10 +230,6 @@
     return candidates.filter((row) =>
       !candidates.some((other) => other !== row && other.contains(row)),
     );
-  }
-
-  function queueVisibleSelectedChatIds(selectedIds, visibleIds) {
-    return [...selectedIds].filter((id) => visibleIds.has(id));
   }
 
   function isManagedNode(node) {
@@ -340,7 +387,10 @@
     isNavigationActionLabel,
     hasNativeChatMenu,
     selectRootChatRows,
-    queueVisibleSelectedChatIds,
+    cleanChatTitle,
+    chatMatchesFilter,
+    filterChats,
+    mergeChatList,
     isManagedNode,
     needsRemount,
     shouldShowChatManager,
@@ -366,6 +416,83 @@
     return;
   }
 
+  const previousRuntime = window.__zapiaManager;
+  let restoredState = previousRuntime?.snapshot();
+  previousRuntime?.dispose();
+  if (!restoredState) {
+    const savedState = sessionStorage.getItem('zapia_manager_dev_snapshot');
+    if (savedState) {
+      restoredState = JSON.parse(savedState);
+      sessionStorage.removeItem('zapia_manager_dev_snapshot');
+    }
+  }
+
+  const lifetime = new AbortController();
+  const ownedTimeouts = new Set();
+  const ownedIntervals = new Set();
+  const ownedFrames = new Set();
+  const ownedObservers = new Set();
+  const pendingWork = new Set();
+
+  function assertRuntimeActive() {
+    if (lifetime.signal.aborted) {
+      throw new DOMException('Userscript instance replaced.', 'AbortError');
+    }
+  }
+
+  function later(callback, delay) {
+    const id = window.setTimeout(() => {
+      ownedTimeouts.delete(id);
+      if (!lifetime.signal.aborted) callback();
+    }, delay);
+    ownedTimeouts.add(id);
+    return id;
+  }
+
+  function every(callback, delay) {
+    const id = window.setInterval(callback, delay);
+    ownedIntervals.add(id);
+    return id;
+  }
+
+  function frame(callback) {
+    const id = window.requestAnimationFrame((time) => {
+      ownedFrames.delete(id);
+      if (!lifetime.signal.aborted) callback(time);
+    });
+    ownedFrames.add(id);
+    return id;
+  }
+
+  function disposeRuntime() {
+    if (lifetime.signal.aborted) return;
+    if (chatActionDepth > 0) {
+      throw new Error('Wait for the native chat action to finish before replacing the userscript.');
+    }
+    lifetime.abort();
+    for (const id of ownedTimeouts) window.clearTimeout(id);
+    for (const id of ownedIntervals) window.clearInterval(id);
+    for (const id of ownedFrames) window.cancelAnimationFrame(id);
+    for (const observer of ownedObservers) observer.disconnect();
+    for (const cancel of [...pendingWork]) cancel();
+    ownedTimeouts.clear();
+    ownedIntervals.clear();
+    ownedFrames.clear();
+    ownedObservers.clear();
+    document.querySelectorAll('[data-zapia-manager-control], [data-zapia-manager-style]')
+      .forEach((element) => element.remove());
+  }
+
+  function runtimeSnapshot() {
+    return {
+      chats: knownChats,
+      filters: [...activeFilters],
+      selection: [...selectedChatIds],
+      collapsed: panelCollapsed,
+      listScroll: document.querySelector('.zapia-manager-chat-list')?.scrollTop ?? 0,
+      complete: catalogueComplete,
+    };
+  }
   requestZapiaCacheRecovery(window.localStorage);
   preferences = loadPreferences(window.localStorage);
 
@@ -439,7 +566,7 @@
       if (
         PRIMARY_NAVIGATION_LABELS.has(label)
         || PROMO_NAVIGATION_PATTERN.test(label)
-        || /^Radar(?:\s+\d+)?$/u.test(label)
+        || RADAR_NAVIGATION_PATTERN.test(label)
       ) {
         return Math.max(
           bottom,
@@ -477,7 +604,7 @@
     };
   }
 
-  function isFlutterChatRow(row, viewport) {
+  function isFlutterChatRow(row, viewport, clip = true) {
     if (
       !viewport
       || !row.matches('flt-semantics[role="button"]')
@@ -506,8 +633,11 @@
       return false;
     }
 
-    return rowRect.top >= viewport.top
-      && rowRect.bottom <= viewport.bottom;
+    return !clip
+      || (
+        rowRect.top >= viewport.top
+        && rowRect.bottom <= viewport.bottom
+      );
   }
 
   function hasChatHoverAction(viewport) {
@@ -532,7 +662,7 @@
     });
   }
 
-  function discoverChatRows(viewport = getChatViewport()) {
+  function discoverChatRows(viewport = getChatViewport(), clip = true) {
     const candidates = [
       ...document.querySelectorAll(
         CHAT_ROW_SELECTORS.join(','),
@@ -543,12 +673,14 @@
         && !row.closest('[data-zapia-manager-control]'),
       )
       .filter((row) => normalizeSpace(row.textContent).length > 0)
-      .filter((row) => isFlutterChatRow(row, viewport));
+      .filter((row) => isFlutterChatRow(row, viewport, clip));
 
-    return selectRootChatRows(candidates);
+    return selectRootChatRows(candidates).sort(
+      (first, second) => first.getBoundingClientRect().top - second.getBoundingClientRect().top,
+    );
   }
 
-  function describeRow(row) {
+  function chatTitle(row) {
     const named = row.querySelector(
       '[data-testid*="title" i], [data-testid*="name" i], [class*="title" i], [class*="name" i]',
     );
@@ -560,8 +692,7 @@
       || '',
     );
 
-    return cleanChatTitle(rawText).slice(0, 80)
-      || 'chat sem título';
+    return cleanChatTitle(rawText) || 'chat sem título';
   }
 
   function semanticLabel(element) {
@@ -636,7 +767,7 @@
 
     browserTabTitleScheduled = true;
 
-    window.requestAnimationFrame(() => {
+    frame(() => {
       browserTabTitleScheduled = false;
       syncBrowserTabTitle();
     });
@@ -647,13 +778,14 @@
 
     const start = () => {
       if (!document.documentElement) {
-        window.setTimeout(start, 50);
+        later(start, 50);
         return;
       }
 
       browserTabTitleObserver = new MutationObserver(
         scheduleBrowserTabTitleSync,
       );
+      ownedObservers.add(browserTabTitleObserver);
 
       browserTabTitleObserver.observe(
         document.documentElement,
@@ -673,7 +805,7 @@
 
       scheduleBrowserTabTitleSync();
 
-      window.setInterval(
+      every(
         syncBrowserTabTitle,
         500,
       );
@@ -683,8 +815,10 @@
   }
 
   function semanticMenuButton() {
+    const nav = getChatViewport()?.nav;
     return semanticButtons().find((element) =>
-      isMenuButtonLabel(semanticLabel(element)),
+      !nav?.contains(element)
+      && isMenuButtonLabel(semanticLabel(element)),
     ) ?? null;
   }
 
@@ -716,42 +850,40 @@
   }
 
   function waitFor(find, description, timeoutMs = 5000) {
+    assertRuntimeActive();
     return new Promise((resolve, reject) => {
       let timeoutId;
-
-      const complete = (result) => {
+      const cleanup = () => {
         observer.disconnect();
-        clearTimeout(timeoutId);
-        resolve(result);
+        ownedObservers.delete(observer);
+        window.clearTimeout(timeoutId);
+        ownedTimeouts.delete(timeoutId);
+        pendingWork.delete(cancel);
       };
-
+      const cancel = () => {
+        cleanup();
+        reject(new DOMException('Userscript instance replaced.', 'AbortError'));
+      };
       const check = () => {
         const result = find();
-
-        if (result) complete(result);
+        if (result) {
+          cleanup();
+          resolve(result);
+        }
       };
-
       const observer = new MutationObserver(check);
-
-      timeoutId = window.setTimeout(() => {
-        observer.disconnect();
-        reject(new Error(
-          `Zapia did not render ${description}.`,
-        ));
+      ownedObservers.add(observer);
+      pendingWork.add(cancel);
+      timeoutId = later(() => {
+        cleanup();
+        reject(new Error(`Zapia did not render ${description}.`));
       }, timeoutMs);
-
       observer.observe(document.documentElement, {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: [
-          'aria-expanded',
-          'data-state',
-          'style',
-          'class',
-        ],
+        attributeFilter: ['aria-expanded', 'data-state', 'style', 'class'],
       });
-
       check();
     });
   }
@@ -928,14 +1060,16 @@
   }
 
   function toast(message, kind = 'info') {
+    if (lifetime.signal.aborted) return;
     const notice = document.createElement('output');
 
     notice.className = `zapia-manager-toast zapia-manager-toast-${kind}`;
+    notice.dataset.zapiaManagerControl = 'true';
     notice.textContent = message;
 
     document.body.append(notice);
 
-    window.setTimeout(() => notice.remove(), 4500);
+    later(() => notice.remove(), 4500);
   }
 
   async function openNativeActions(row) {
@@ -1208,7 +1342,7 @@
 
       if (kind === 'close') {
         radarInteractionActive = false;
-        window.setTimeout(
+        later(
           refreshRadarOverlayState,
           350,
         );
@@ -1234,6 +1368,7 @@
       {
         capture: true,
         passive: true,
+        signal: lifetime.signal,
       },
     );
 
@@ -1243,12 +1378,13 @@
       {
         capture: true,
         passive: true,
+        signal: lifetime.signal,
       },
     );
 
     refreshRadarOverlayState();
 
-    radarProtectionInterval = window.setInterval(
+    radarProtectionInterval = every(
       refreshRadarOverlayState,
       500,
     );
@@ -1256,19 +1392,21 @@
 
   async function runCurrentChatShortcut(action) {
     try {
-      if (action === 'prefix-check') {
-        await applyPrefix(
-          null,
-          `${preferences.prefixes[0]} `,
-        );
-      } else if (action === 'prefix-yellow') {
-        await applyPrefix(
-          null,
-          `${preferences.prefixes[1]} `,
-        );
-      } else if (action === 'delete') {
-        await deleteChat(null);
-      }
+      await runChatAction(async () => {
+        if (action === 'prefix-check') {
+          await applyPrefix(
+            null,
+            `${preferences.prefixes[0]} `,
+          );
+        } else if (action === 'prefix-yellow') {
+          await applyPrefix(
+            null,
+            `${preferences.prefixes[1]} `,
+          );
+        } else if (action === 'delete') {
+          await deleteChat(null);
+        }
+      });
     } catch (error) {
       toast(error.message, 'error');
     }
@@ -1430,38 +1568,240 @@
       event.stopPropagation();
 
       void runCurrentChatShortcut(action);
+    }, { signal: lifetime.signal });
+  }
+
+  const SIDEBAR_SCROLL_STEP = 160;
+  const activeFilters = new Set(restoredState?.filters ?? []);
+  let knownChats = restoredState?.chats ?? [];
+  let chatListVersion = 0;
+  let chatScanRunning = false;
+  let catalogueComplete = restoredState?.complete ?? false;
+  let chatScanStarted = restoredState?.complete ?? false;
+  let chatActionDepth = 0;
+  let rescanTimer = null;
+  panelCollapsed = restoredState?.collapsed ?? panelCollapsed;
+  for (const id of restoredState?.selection ?? []) selectedChatIds.add(id);
+
+  function setKnownChats(next) {
+    knownChats = next;
+    chatListVersion += 1;
+  }
+
+  function pruneSelection() {
+    const known = new Set(knownChats.map(({ id }) => id));
+
+    for (const id of [...selectedChatIds]) {
+      if (!known.has(id)) selectedChatIds.delete(id);
+    }
+  }
+
+  function filteredChats() {
+    return filterChats(knownChats, activeFilters, preferences.prefixes);
+  }
+
+  function nextFrame() {
+    assertRuntimeActive();
+    return new Promise((resolve, reject) => {
+      const cancel = () => {
+        pendingWork.delete(cancel);
+        reject(new DOMException('Userscript instance replaced.', 'AbortError'));
+      };
+      pendingWork.add(cancel);
+      frame(() => {
+        pendingWork.delete(cancel);
+        resolve();
+      });
     });
   }
 
+  function collectSidebarChats() {
+    return discoverChatRows(getChatViewport(), false).map((row) => ({
+      id: chatIdentity(row),
+      title: chatTitle(row),
+    }));
+  }
+
+  function sidebarSignature() {
+    const rows = discoverChatRows();
+
+    if (!rows.length) return '';
+
+    const first = rows[0];
+    const last = rows.at(-1);
+
+    return `${chatIdentity(first)}|${
+      Math.round(first.getBoundingClientRect().top)
+    }|${chatIdentity(last)}|${
+      Math.round(last.getBoundingClientRect().top)
+    }`;
+  }
+
+  async function scrollSidebar(deltaY, timeoutMs = 600) {
+    const viewport = getChatViewport();
+    const view = document.querySelector('flutter-view');
+
+    if (!viewport || !view) return false;
+
+    const before = sidebarSignature();
+
+    view.dispatchEvent(new WheelEvent('wheel', {
+      deltaY,
+      clientX: Math.round(viewport.navRect.left + viewport.navRect.width * 0.4),
+      clientY: Math.round((viewport.top + viewport.bottom) / 2),
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    const deadline = performance.now() + timeoutMs;
+
+    while (performance.now() < deadline) {
+      await nextFrame();
+
+      if (sidebarSignature() !== before) {
+        await nextFrame();
+        await nextFrame();
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async function scrollSidebarStep(deltaY) {
+    if (await scrollSidebar(deltaY, 800)) return true;
+
+    return scrollSidebar(deltaY, 1800);
+  }
+
+  async function scrollSidebarToTop() {
+    for (;;) {
+      if (!(await scrollSidebarStep(-SIDEBAR_SCROLL_STEP * 8))) return;
+    }
+  }
+
+  function visibleChatRowById(id) {
+    return discoverChatRows().find(
+      (row) => chatIdentity(row) === id,
+    ) ?? null;
+  }
+
+  async function findChatRow(id) {
+    let row = visibleChatRowById(id);
+
+    if (row) return row;
+
+    await scrollSidebarToTop();
+
+    for (;;) {
+      row = visibleChatRowById(id);
+
+      if (row) return row;
+      if (!(await scrollSidebarStep(SIDEBAR_SCROLL_STEP))) break;
+    }
+
+    row = visibleChatRowById(id);
+
+    if (row) return row;
+
+    throw new Error(`Zapia did not render chat ${id}.`);
+  }
+
+  async function scanAllChats() {
+    if (chatScanRunning || chatActionDepth > 0) return;
+
+    chatScanRunning = true;
+    chatListVersion += 1;
+
+    try {
+      const anchorRow = discoverChatRows()[0];
+      const anchorId = anchorRow ? chatIdentity(anchorRow) : null;
+
+      await scrollSidebarToTop();
+
+      let found = [];
+
+      for (;;) {
+        found = mergeChatList(found, collectSidebarChats());
+
+        if (!(await scrollSidebarStep(SIDEBAR_SCROLL_STEP))) break;
+      }
+
+      for (;;) {
+        found = mergeChatList(found, collectSidebarChats());
+
+        if (!(await scrollSidebarStep(-SIDEBAR_SCROLL_STEP))) break;
+      }
+
+      found = mergeChatList(found, collectSidebarChats());
+
+      if (found.length) {
+        setKnownChats(found);
+        catalogueComplete = true;
+        pruneSelection();
+      }
+
+      if (anchorId) {
+        await findChatRow(anchorId).catch(() => null);
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') throw error;
+    } finally {
+      chatScanRunning = false;
+      chatListVersion += 1;
+      if (!lifetime.signal.aborted) mountControls();
+    }
+  }
+
+  function scheduleChatRescan() {
+    if (lifetime.signal.aborted) return;
+    window.clearTimeout(rescanTimer);
+
+    rescanTimer = later(() => {
+      void scanAllChats().catch((error) => toast(error.message, 'error'));
+    }, 2500);
+  }
+
+  async function runChatAction(task) {
+    assertRuntimeActive();
+    if (chatScanRunning) {
+      throw new Error(
+        'Aguarde a lista de chats terminar de carregar.',
+      );
+    }
+    if (chatActionDepth > 0) {
+      throw new Error('Aguarde a ação atual terminar.');
+    }
+
+    chatActionDepth += 1;
+
+    try {
+      await task();
+    } finally {
+      chatActionDepth -= 1;
+      scheduleChatRescan();
+    }
+  }
+
   function queueFromSelection() {
-    const rowsById = new Map(
-      discoverChatRows().map((row) => [
-        chatIdentity(row),
-        row,
-      ]),
-    );
-
-    deletionQueue = queueVisibleSelectedChatIds(
-      selectedChatIds,
-      rowsById,
-    );
-
-    return rowsById;
+    deletionQueue = knownChats
+      .map(({ id }) => id)
+      .filter((id) => selectedChatIds.has(id));
   }
 
   async function applyPrefixToSelectedChats(prefix) {
-    const rowsById = queueFromSelection();
+    queueFromSelection();
 
     if (!deletionQueue.length) {
-      throw new Error(
-        'Selecione pelo menos um chat visível.',
-      );
+      throw new Error('Selecione pelo menos um chat.');
     }
 
-    for (const id of [...deletionQueue]) {
-      await rediscoverAndApply(id, prefix);
-      selectedChatIds.delete(id);
-    }
+    await runChatAction(async () => {
+      for (const id of [...deletionQueue]) {
+        await rediscoverAndApply(id, prefix);
+        selectedChatIds.delete(id);
+      }
+    });
 
     deletionQueue = [];
     mountControls();
@@ -1477,38 +1817,51 @@
     queueFromSelection();
 
     if (!deletionQueue.length) {
-      throw new Error(
-        'Selecione pelo menos um chat visível.',
-      );
+      throw new Error('Selecione pelo menos um chat.');
     }
 
-    for (const id of [...deletionQueue]) {
-      await rediscoverAndDelete(id);
-      selectedChatIds.delete(id);
-    }
+    await runChatAction(async () => {
+      for (const id of [...deletionQueue]) {
+        await rediscoverAndDelete(id);
+        selectedChatIds.delete(id);
+      }
+    });
 
     deletionQueue = [];
     mountControls();
   }
 
-  function renderManagerPanel(rows) {
-    const state = `${
-      panelCollapsed
-    }:${JSON.stringify(preferences)}:${
-      rows
-        .map((row) =>
-          `${chatIdentity(row)}:${selectedChatIds.has(chatIdentity(row))}`,
-        )
-        .join('\n')
-    }`;
+  function toggleFilter(filter) {
+    if (activeFilters.has(filter)) {
+      activeFilters.delete(filter);
+    } else {
+      activeFilters.add(filter);
+    }
+
+    const shown = new Set(filteredChats().map(({ id }) => id));
+
+    for (const id of [...selectedChatIds]) {
+      if (!shown.has(id)) selectedChatIds.delete(id);
+    }
+
+    renderManagerPanel();
+  }
+
+  function renderManagerPanel() {
+    const state = [
+      panelCollapsed,
+      JSON.stringify(preferences),
+      [...activeFilters].sort().join(','),
+      chatScanRunning,
+      chatListVersion,
+      [...selectedChatIds].join('\u0001'),
+    ].join('|');
 
     let panel = document.querySelector(
       '[data-zapia-manager-panel]',
     );
 
-    if (
-      panel?.dataset.zapiaManagerState === state
-    ) {
+    if (panel?.dataset.zapiaManagerState === state) {
       return;
     }
 
@@ -1521,11 +1874,11 @@
       document.body.append(panel);
     }
 
+    const previousScroll = panel
+      .querySelector('.zapia-manager-chat-list')?.scrollTop ?? restoredState?.listScroll ?? 0;
+
     panel.dataset.zapiaManagerState = state;
-    panel.classList.toggle(
-      'is-collapsed',
-      panelCollapsed,
-    );
+    panel.classList.toggle('is-collapsed', panelCollapsed);
     panel.replaceChildren();
 
     if (panelCollapsed) {
@@ -1534,7 +1887,7 @@
         'Abrir Zapia Manager',
         () => {
           panelCollapsed = false;
-          renderManagerPanel(rows);
+          renderManagerPanel();
         },
       );
 
@@ -1542,6 +1895,8 @@
       panel.append(expand);
       return;
     }
+
+    const chats = filteredChats();
 
     const heading = document.createElement('div');
     heading.className = 'zapia-manager-panel-heading';
@@ -1553,13 +1908,11 @@
     title.textContent = 'Zapia Manager';
 
     const summary = document.createElement('span');
-    summary.textContent = `${
-      rows.length
-    } visíveis · ${
-      selectedChatIds.size
-    } selecionado${
+    summary.textContent = `${chats.length}${
+      activeFilters.size ? ` de ${knownChats.length}` : ''
+    } chats · ${selectedChatIds.size} selecionado${
       selectedChatIds.size === 1 ? '' : 's'
-    }`;
+    }${chatScanRunning ? ' · carregando…' : ''}`;
 
     headingCopy.append(title, summary);
 
@@ -1576,7 +1929,7 @@
       'Minimizar Zapia Manager',
       () => {
         panelCollapsed = true;
-        renderManagerPanel(rows);
+        renderManagerPanel();
       },
     );
 
@@ -1589,41 +1942,74 @@
     heading.append(headingCopy, headingActions);
     panel.append(heading);
 
+    const filters = document.createElement('div');
+    filters.className = 'zapia-manager-filters';
+
+    for (const [key, label, hint] of [
+      ['numbered', '[nº]', 'Mostrar chats com id [número]'],
+      ['prefix-0', preferences.prefixes[0], 'Mostrar chats com o primeiro emoji'],
+      ['prefix-1', preferences.prefixes[1], 'Mostrar chats com o segundo emoji'],
+    ]) {
+      const chip = button(label, hint, () => toggleFilter(key));
+
+      chip.classList.add('zapia-manager-filter');
+      chip.classList.toggle('is-active', activeFilters.has(key));
+      chip.setAttribute('aria-pressed', String(activeFilters.has(key)));
+      filters.append(chip);
+    }
+
+    const refresh = button(
+      chatScanRunning ? 'Carregando…' : 'Atualizar lista',
+      'Recarrega a lista completa de chats rolando a barra lateral',
+      () => scanAllChats(),
+    );
+
+    refresh.classList.add('zapia-manager-refresh');
+    refresh.disabled = chatScanRunning;
+    filters.append(refresh);
+    panel.append(filters);
+
     const list = document.createElement('div');
     list.className = 'zapia-manager-chat-list';
 
-    for (const row of rows) {
-      const id = chatIdentity(row);
-      const option = document.createElement('label');
+    if (!chats.length) {
+      const empty = document.createElement('span');
+      empty.className = 'zapia-manager-empty';
+      empty.textContent = chatScanRunning
+        ? 'Carregando chats…'
+        : 'Nenhum chat encontrado.';
+      list.append(empty);
+    }
 
+    for (const chat of chats) {
+      const option = document.createElement('label');
       option.className = 'zapia-manager-chat-option';
+      option.title = chat.title;
 
       const select = document.createElement('input');
       select.type = 'checkbox';
-      select.checked = selectedChatIds.has(id);
-      select.setAttribute(
-        'aria-label',
-        `Selecionar ${describeRow(row)}`,
-      );
+      select.checked = selectedChatIds.has(chat.id);
+      select.setAttribute('aria-label', `Selecionar ${chat.title}`);
 
       select.addEventListener('change', () => {
         if (select.checked) {
-          selectedChatIds.add(id);
+          selectedChatIds.add(chat.id);
         } else {
-          selectedChatIds.delete(id);
+          selectedChatIds.delete(chat.id);
         }
 
-        renderManagerPanel(rows);
+        renderManagerPanel();
       });
 
       const label = document.createElement('span');
-      label.textContent = describeRow(row);
+      label.textContent = chat.title;
 
       option.append(select, label);
       list.append(option);
     }
 
     panel.append(list);
+    list.scrollTop = previousScroll;
 
     const actions = document.createElement('div');
     actions.className = 'zapia-manager-panel-actions';
@@ -1634,7 +2020,7 @@
       `${preferences.prefixes[0]} Prefixar (${
         shortcutLabel(preferences.shortcuts['prefix-check'])
       })`,
-      'Aplica o primeiro prefixo aos chats visíveis selecionados',
+      'Aplica o primeiro prefixo aos chats selecionados',
       () => applyPrefixToSelectedChats(
         `${preferences.prefixes[0]} `,
       ),
@@ -1646,7 +2032,7 @@
       `${preferences.prefixes[1]} Prefixar (${
         shortcutLabel(preferences.shortcuts['prefix-yellow'])
       })`,
-      'Aplica o segundo prefixo aos chats visíveis selecionados',
+      'Aplica o segundo prefixo aos chats selecionados',
       () => applyPrefixToSelectedChats(
         `${preferences.prefixes[1]} `,
       ),
@@ -1670,7 +2056,7 @@
       () => {
         selectedChatIds.clear();
         deletionQueue = [];
-        mountControls();
+        renderManagerPanel();
       },
     );
 
@@ -1693,25 +2079,11 @@
   }
 
   async function rediscoverAndApply(id, prefix) {
-    const row = await waitFor(
-      () => discoverChatRows().find(
-        (candidate) => chatIdentity(candidate) === id,
-      ) ?? null,
-      `chat ${id}`,
-    );
-
-    await applyPrefix(row, prefix);
+    await applyPrefix(await findChatRow(id), prefix);
   }
 
   async function rediscoverAndDelete(id) {
-    const row = await waitFor(
-      () => discoverChatRows().find(
-        (candidate) => chatIdentity(candidate) === id,
-      ) ?? null,
-      `chat ${id}`,
-    );
-
-    await deleteChat(row);
+    await deleteChat(await findChatRow(id));
   }
 
   function hasNativeChatMenu(entries) {
@@ -1733,6 +2105,7 @@
   }
 
   function mountControls() {
+    if (lifetime.signal.aborted) return;
     syncPanelWithNativeMenu();
 
     if (
@@ -1748,7 +2121,7 @@
     const rows = discoverChatRows(viewport);
     const hoverActionOpen = hasChatHoverAction(viewport);
 
-    if (!shouldShowChatManager(rows)) {
+    if (!shouldShowChatManager(rows) && !knownChats.length) {
       if (!hoverActionOpen) {
         removeManagerPanel();
       }
@@ -1756,9 +2129,31 @@
       return;
     }
 
-    if (hoverActionOpen) return;
+    if (hoverActionOpen) {
+      if (knownChats.length) renderManagerPanel();
+      return;
+    }
 
-    renderManagerPanel(rows);
+    if (!chatScanRunning) {
+      const merged = mergeChatList(
+        knownChats,
+        rows.map((row) => ({
+          id: chatIdentity(row),
+          title: chatTitle(row),
+        })),
+      );
+
+      if (merged.length !== knownChats.length) {
+        setKnownChats(merged);
+      }
+    }
+
+    if (!chatScanStarted && rows.length && chatActionDepth === 0) {
+      chatScanStarted = true;
+      void scanAllChats().catch((error) => toast(error.message, 'error'));
+    }
+
+    renderManagerPanel();
   }
 
   function scheduleMount() {
@@ -1882,6 +2277,32 @@
         padding: 7px 6px;
         border-radius: 6px;
         cursor: pointer;
+        user-select: text;
+      }
+
+      .zapia-manager-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 8px 10px 0;
+      }
+
+      .zapia-manager-filter {
+        min-inline-size: 38px;
+      }
+
+      .zapia-manager-filter.is-active {
+        border-color: #e8b64b;
+        background: #3a3320;
+      }
+
+      .zapia-manager-refresh {
+        margin-inline-start: auto;
+      }
+
+      .zapia-manager-empty {
+        color: #aeb8c2;
+        padding: 8px;
       }
 
       .zapia-manager-heading-actions {
@@ -1904,10 +2325,10 @@
       }
 
       .zapia-manager-chat-option span {
-        overflow: hidden;
+        min-inline-size: 0;
         color: #e5e9ed;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
+        user-select: text;
       }
 
       .zapia-manager-settings {
@@ -2019,6 +2440,7 @@
       }
     `;
 
+    style.dataset.zapiaManagerStyle = 'true';
     document.head.append(style);
   }
 
@@ -2030,6 +2452,8 @@
     installKeyboardShortcuts();
     installRadarProtection();
     installBrowserTabTitleSync();
+    if (knownChats.length) renderManagerPanel();
+    syncPanelWithNativeMenu();
     syncLoop();
   }
 
@@ -2041,8 +2465,25 @@
       mountControls();
     }
 
-    window.setTimeout(syncLoop, 500);
+    later(syncLoop, 500);
   }
+
+  window.__zapiaManager = Object.freeze({
+    version: '0.3.0',
+    snapshot: runtimeSnapshot,
+    dispose: disposeRuntime,
+    refresh: scanAllChats,
+    status: () => ({
+      disposed: lifetime.signal.aborted,
+      chats: knownChats.length,
+      scanning: chatScanRunning,
+      acting: chatActionDepth > 0,
+      timeouts: ownedTimeouts.size,
+      intervals: ownedIntervals.size,
+      frames: ownedFrames.size,
+      observers: ownedObservers.size,
+    }),
+  });
 
   if (document.body) {
     boot();
@@ -2050,7 +2491,7 @@
     document.addEventListener(
       'DOMContentLoaded',
       boot,
-      { once: true },
+      { once: true, signal: lifetime.signal },
     );
   }
 })();

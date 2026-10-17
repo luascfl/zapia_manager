@@ -1,6 +1,6 @@
 # Ralph workflow
 
-The active milestone is Milestone 2 in `.context/plans/ROADMAP.md`. Next open story: `US-004` in `prd.json` (a repro may now be possible; see its notes).
+Milestone 3, US-005, is complete: full chat catalogue, filters and source-only browser reload. See `.context/plans/ROADMAP.md`. US-004 remains open; this cycle identified a competing sidebar `Mais ações` control but did not reproduce a chat link opening.
 
 Definition of done for every story:
 

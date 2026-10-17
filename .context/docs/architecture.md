@@ -1,30 +1,27 @@
----
-type: doc
-name: architecture
-description: Zapia Manager userscript structure and safety boundaries
-category: architecture
-generated: 2026-09-06
-status: curated
----
-
 # Architecture
 
-`zapia-manager.user.js` is one self-contained browser module.
+`zapia-manager.user.js` is a self-contained browser module. `scripts/reload-userscript.mjs` is a development-only CDP injector with no third-party dependencies.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| Chat discovery | Finds visible candidate rows through Zapia URL, test-id, and ARIA evidence, then removes nested duplicates. |
-| Row controls | Adds a checkbox plus `✔` and `🟡` action buttons without changing message content. |
-| Rename flow | Opens the row menu, chooses a visible native rename action, updates its native input, then uses its non-destructive save action. |
-| Deletion queue | Keeps selected visible chat identities and opens one native delete menu action at a time. |
-| Safety guard | Restricts delete activation to an action inside a menu. Buttons in a deletion dialog are never candidates. |
-| SPA lifecycle | A `MutationObserver` re-runs idempotent mounting after Zapia renders new rows. |
+| Sidebar discovery | Excludes navigation, promotional banners and hover actions; normalizes unread counters and sorts native rows by visual position because Flutter recycles semantic nodes. |
+| Catalogue | Traverses the sidebar in both directions using wheel events scoped to the navigation viewport. Merges overlapping windows by identity and restores the previously visible chat. The in-memory catalogue survives userscript replacement. |
+| Panel | Renders complete catalogue titles as DOM text, not a virtualized Canvas list. Native browser text find can reach offscreen panel rows. List scroll survives selection changes and source replacement. |
+| Filters | Matches leading numeric `[id]`, either configured emoji (including checkmark variation selectors), and combines selected filters with OR. Hidden selections are cleared when filters change. |
+| Native actions | Reveals an offscreen selected row before opening its native menu. The header `Mais ações` lookup excludes sidebar hover controls. Rename and delete menu items use exact labels. |
+| Deletion | Confirms deletion only inside Zapia's native confirmation dialog; never uses a hidden endpoint or a menu item as final confirmation. |
+| Runtime lifecycle | `window.__zapiaManager` owns cleanup, snapshots, explicit refresh and status. Replacement aborts document listeners, clears owned scheduling, disconnects observers, cancels pending waits and removes only its own UI/style. |
+| Development reload | Injects current local source into one verified Zapia CDP target, retaining page/navigation state and the completed catalogue. One explicit legacy migration is necessary for old instances without cleanup hooks. |
 
-## Invariants
+## Invariants and limits
 
-1. Prefixing strips an existing managed prefix before adding the requested one.
-2. A native final deletion confirmation is always left for the user.
-3. No direct Zapia API, fixed-delay sequencing, screen coordinates, or external dependency is used.
-4. Failure to identify a safe native element stops the requested action and displays an error.
+1. Prefixing replaces a managed prefix rather than stacking it. Prefix and id filters tolerate the checkmark variation selector and missing spaces.
+2. Catalogue traversal reads only the native sidebar. No Zapia API, cookies or hidden data endpoints are consulted.
+3. Native actions are rediscovered at execution time; recycled DOM nodes are not retained as chat identity.
+4. UI snapshots contain discovered titles and state, not live DOM references. The registry is in memory; only the development-only legacy migration temporarily uses session storage.
+5. A source replacement is refused during a native action. A catalogue scan can be cancelled while keeping a previously completed catalogue.
+6. The panel hides for the native chat menu and reappears after closure. Hover guards must not prevent mounting a restored catalogue.
+7. Flutter exposes title-based identities rather than stable chat ids. Equal titles cannot be distinguished reliably by the existing DOM contract.
+8. Initial discovery still requires native sidebar scrolling and a foreground/rendering tab. Hot replacement does not repeat that discovery. Manual `Atualizar lista` or post-action refresh discovers changes.

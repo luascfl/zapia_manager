@@ -27,3 +27,10 @@ Dependency: Milestone 1.
 - US-002 (done): keep navigation banners such as `Ganhe o Zapia Pro de graça` out of the chat list.
 - US-003 (done): keep the manager panel from covering Zapia’s native chat menu.
 - US-004: find why a shortcut sometimes opens a chat link (blocked on a repro).
+
+## Milestone 3: Searchable chat catalogue
+
+Dependency: Milestone 2 panel/menu isolation.
+
+- US-005 (done): load the complete sidebar catalogue, make full titles searchable with browser find, filter by `[number]` and either configured emoji, and support userscript-only reloads that preserve the catalogue for fast browser testing.
+

@@ -14,7 +14,7 @@ A dependency-free userscript for Tampermonkey or Violentmonkey that manages Zapi
 ## Capabilities
 
 - Applies one managed title prefix, `✔ ` or `🟡 `, through Zapia’s visible rename flow.
-- Mounts accessible checkboxes and a selected-count toolbar on visible chat rows.
+- Loads the sidebar catalogue into a separate panel with complete DOM titles, browser text search, and `[number]`/emoji filters.
 - Deletes selected chats one at a time through Zapia’s native menu, confirming only inside the native `Excluir conversa?` dialog.
 - Re-mounts controls after SPA changes with a `MutationObserver`.
 
@@ -22,10 +22,11 @@ A dependency-free userscript for Tampermonkey or Violentmonkey that manages Zapi
 
 - `zapia-manager.user.js`, production userscript.
 - `test/zapia-manager.test.mjs`, Node contract tests.
+- `scripts/reload-userscript.mjs`, development-only source replacement through CDP; preserves the catalogue and UI state without reloading Zapia.
 
 ## Runtime and boundaries
 
-The script runs in LibreWolf under Violentmonkey, has no network privileges or dependencies, and uses DOM-only interaction. It is intentionally conservative: if Zapia does not expose a recognizable native menu, rename dialog, or deletion menu item, it reports an error instead of guessing.
+The script runs in Chrome/LibreWolf under Tampermonkey/Violentmonkey, has no network privileges or dependencies, and uses DOM-only native interactions. It reports an error when native controls cannot be identified. The development injector requires Node.js 22+ and an authenticated Chrome CDP tab; it does not update the installed extension script.
 
 Run validation with:
 
