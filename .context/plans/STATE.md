@@ -141,3 +141,10 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - User reported that the keyboard shortcut sometimes opens a link inside the chat. The native menu actions were located with unanchored regexes (`edit`, `remove`, `delete`) over every visible semantic button, so link or card text such as `Edital...` or a URL ending in `/edit` could match before the real menu item.
 - Version 0.2.26 matches only the exact labels `Renomear`/`Rename` and `Excluir`/`Delete`, and takes the last match (the menu overlay is the most recent node). The now-unused `EDIT_PATTERN` is removed. A regression test covers `Edital...`, a `/edit` URL and a long sentence containing `excluir`.
 - The cause is inferred from the code: it could not be reproduced live because the restarted automation Chrome had no Zapia Manager installed and an empty chat list. Syntax check and 16 Node tests passed.
+
+## Live link-opening investigation, 2026-10-17
+
+- Automated in a persistent Chrome (CDP, current source injected). Across 15 chats the semantic tree exposed exactly one `Mais ações` (the header) and no link nodes; chat links are canvas-drawn, so the script cannot click them. Every `.click()` in the script targets a placeholder, a sidebar row, a menu item or a dialog button.
+- Alt+C (synthetic and trusted CDP key events) in 5 chats clicked only `Mais ações` then `Renomear`; no `window.open`, no new tab, no route change. The final `Renomear` click was blocked by a spy, so no chat was renamed.
+- Not reproduced: message bodies did not render in this Chrome (empty canvas), so the user's case with a link in the message area remains unconfirmed. The anchored-label fix in 0.2.26 stays as hardening.
+- Verified defects seen along the way: the sidebar promo `Ganhe o Zapia Pro de graça` is listed as a chat in the manager panel, and the manager panel sits exactly where Zapia's native chat menu opens (top right), hiding it.
