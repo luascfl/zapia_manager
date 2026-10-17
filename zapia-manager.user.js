@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.4
+// @version      0.5.5
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -2048,6 +2048,57 @@
     renderManagerPanel();
   }
 
+  function nativeSearchInput() {
+    return [...document.querySelectorAll('input')]
+      .find((input) => {
+        if (!isVisible(input) || input.closest('[data-zapia-manager-control]')) return false;
+        const label = normalizeSpace(input.getAttribute('aria-label') || input.placeholder || '');
+        return /^(?:buscar|search)$/iu.test(label);
+      }) ?? null;
+  }
+
+  function nativeSearchButton() {
+    return [...document.querySelectorAll('flt-semantics[role="button"]')]
+      .find((element) => {
+        if (element.closest('[data-zapia-manager-control]')) return false;
+        const label = normalizeSpace(element.textContent || element.getAttribute('aria-label') || '');
+        return label === 'Buscar' || label === 'Search';
+      }) ?? null;
+  }
+
+  async function openNativeSearch() {
+    const trigger = nativeSearchButton();
+    if (!trigger) throw new Error('Zapia did not expose native search.');
+    trigger.click();
+    await waitFor(nativeSearchInput, 'the native search input', 3000);
+    renderManagerPanel();
+  }
+
+  async function clearNativeSearch() {
+    const nativeDismiss = [...document.querySelectorAll('flt-semantics[role="button"]')]
+      .find((el) => {
+        const label = normalizeSpace(el.textContent || el.getAttribute('aria-label') || '');
+        return /^(?:fechar|close)$/iu.test(label) || /fechar busca/iu.test(label);
+      });
+    if (nativeDismiss) {
+      nativeDismiss.click();
+    } else {
+      const input = nativeSearchInput();
+      if (input) {
+        setInputValue(input, '');
+        input.focus();
+        for (const type of ['keydown', 'keyup']) {
+          input.dispatchEvent(new KeyboardEvent(type, {
+            key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+            bubbles: true, cancelable: true,
+          }));
+        }
+      }
+    }
+    await waitFor(() => !nativeSearchInput(), 'the native search input to close', 3000).catch(() => {});
+    renderManagerPanel();
+  }
+
   let activeRowMenu = null;
 
   function closeRowMenu() {
@@ -2150,10 +2201,13 @@
       document.body.append(panel);
     }
     syncNativeSidebarLayout();
-    const minimized = preferences.panel.minimized;
+    const nativeSearchActive = Boolean(nativeSearchInput());
+    const minimized = preferences.panel.minimized && !nativeSearchActive;
     panel.classList.toggle('is-minimized', minimized);
+    panel.classList.toggle('is-native-search-active', nativeSearchActive);
     const state = [
       JSON.stringify(preferences),
+      nativeSearchActive,
       [...activeFilters].sort().join(','),
       chatScanRunning,
       chatActionDepth > 0,
@@ -2161,7 +2215,6 @@
       activeCatalogueId,
       [...selectedChatIds].join('\u0001'),
     ].join('|');
-    if (panel.dataset.zapiaManagerState === state) return;
     const previousScroll = panel.querySelector('.zapia-manager-chat-list')?.scrollTop
       ?? restoredState?.listScroll ?? 0;
     panel.dataset.zapiaManagerState = state;
@@ -2219,21 +2272,21 @@
       chip.setAttribute('aria-pressed', String(activeFilters.has(key)));
       filters.append(chip);
     }
-    const search = button('🔍', 'Search chats', () => {
-      const btn = [...document.querySelectorAll('flt-semantics[role="button"]')].find((el) => {
-        const label = normalizeSpace(el.textContent || el.getAttribute('aria-label') || '');
-        return label === 'Buscar' || label === 'Search';
-      });
-      if (btn) btn.click();
-      else toast('Search button not found', 'error');
-    });
+    const search = button(
+      nativeSearchActive ? '×' : '🔍',
+      nativeSearchActive ? 'Clear native search' : 'Search chats',
+      nativeSearchActive ? clearNativeSearch : openNativeSearch,
+    );
     search.classList.add('zapia-manager-search');
+    search.classList.toggle('is-clear', nativeSearchActive);
     search.disabled = busy;
     const refresh = button('↻', 'Refresh the complete chat list', scanAllChats);
     refresh.classList.add('zapia-manager-refresh');
     refresh.disabled = busy;
     filters.append(search, refresh);
     panel.append(filters);
+    if (nativeSearchActive) return;
+
     const advanced = document.createElement('details');
     advanced.className = 'zapia-manager-view-options';
     advanced.open = panel.dataset.viewOptionsOpen === 'true';
@@ -2470,14 +2523,20 @@
         font: 13px/1.35 Inter, system-ui, sans-serif; pointer-events: auto !important;
       }
       .zapia-manager-sidebar.is-sidebar-hidden { visibility: hidden; pointer-events: none !important; }
-      .zapia-manager-sidebar.is-minimized { height: auto !important; overflow: visible; border: 0; background: transparent; pointer-events: none !important; }
+      .zapia-manager-sidebar.is-minimized,
+      .zapia-manager-sidebar.is-native-search-active { height: auto !important; overflow: visible; border: 0; background: transparent; pointer-events: none !important; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading { justify-content: flex-end; min-block-size: 28px; padding: 4px 12px; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading-copy,
       .zapia-manager-sidebar.is-minimized .zapia-manager-settings-trigger { display: none; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading-actions,
       .zapia-manager-sidebar.is-minimized .zapia-manager-minimize-trigger { pointer-events: auto !important; }
+      .zapia-manager-sidebar.is-native-search-active .zapia-manager-panel-heading { display: none; }
       .zapia-manager-panel-heading { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; }
       .zapia-manager-filters { flex: 0 0 auto; display: flex; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid #292b2b; }
+      .zapia-manager-sidebar.is-native-search-active .zapia-manager-filters { min-block-size: 36px; padding: 4px 12px; border: 0; pointer-events: none !important; }
+      .zapia-manager-sidebar.is-native-search-active .zapia-manager-filter,
+      .zapia-manager-sidebar.is-native-search-active .zapia-manager-refresh { visibility: hidden; pointer-events: none !important; }
+      .zapia-manager-sidebar.is-native-search-active .zapia-manager-search { pointer-events: auto !important; }
       .zapia-manager-button { border: 1px solid #373b3b; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font: inherit; min-block-size: 28px; padding: 4px 7px; pointer-events: auto !important; }
       .zapia-manager-button:hover:not(:disabled) { background: #2a2e2e; }
       .zapia-manager-button:focus-visible { outline: 2px solid #32bfa6; outline-offset: 2px; }
@@ -2555,7 +2614,7 @@
   }
 
   window.__zapiaManager = Object.freeze({
-    version: '0.5.4',
+    version: '0.5.5',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
