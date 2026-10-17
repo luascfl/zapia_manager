@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.10
+// @version      0.5.11
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -18,6 +18,7 @@
     prefixes: ['✔', '🟡'],
     view: { prioritizeAgents: false, prioritizeIds: false, hideCompleted: false, onlyUnprefixed: false },
     panel: { minimized: false },
+    hiddenChats: [],
     shortcuts: {
       'prefix-check': { altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, code: 'KeyC' },
       'prefix-yellow': { altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, code: 'KeyY' },
@@ -198,6 +199,23 @@
     return groups.flat();
   }
 
+  function excludeHiddenChats(chats, hiddenChats = preferences.hiddenChats) {
+    const hiddenIds = new Set((hiddenChats ?? []).map((item) => (typeof item === 'string' ? item : item.id)));
+    return chats.filter((chat) => !hiddenIds.has(chat.id));
+  }
+
+  function buildSupportDiagnosticPayload(error, context = {}) {
+    return {
+      timestamp: new Date().toISOString(),
+      error: error?.message ?? String(error),
+      chatId: context.id ?? null,
+      chatTitle: context.title ?? null,
+      currentUrl: context.url ?? null,
+      userAgent: context.userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : null),
+      instructions: 'Provide this payload to Zapia support to report an unrecoverable/unavailable chat thread.',
+    };
+  }
+
   function pinnedBetweenSections(position, start, end) {
     return Number.isFinite(start) && Number.isFinite(end) && position >= start && position < end;
   }
@@ -362,7 +380,12 @@
       const view = Object.fromEntries(Object.keys(DEFAULT_PREFERENCES.view)
         .map((key) => [key, stored.view?.[key] === true]));
       const panel = { minimized: stored.panel?.minimized === true };
-      return { prefixes, shortcuts, view, panel };
+      const hiddenChats = Array.isArray(stored.hiddenChats)
+        ? stored.hiddenChats
+            .map((item) => (typeof item === 'string' ? { id: item, title: item } : item))
+            .filter((item) => item?.id && typeof item.id === 'string')
+        : [];
+      return { prefixes, shortcuts, view, panel, hiddenChats };
     } catch {
       return structuredClone(DEFAULT_PREFERENCES);
     }
@@ -472,6 +495,8 @@
     mergeChatList,
     catalogueView,
     pinnedBetweenSections,
+    excludeHiddenChats,
+    buildSupportDiagnosticPayload,
     selectedChats,
     assertChatTitle,
     isManagedNode,
@@ -1188,16 +1213,24 @@
     await dismissNativeMenu();
     if (!row.isConnected) row = await findChatRow(id);
     const before = location.href;
+    const previousActiveId = activeCatalogueId;
+    const previousActiveUrl = activeCatalogueUrl;
     const alreadyCurrent = activeCatalogueId === id && activeCatalogueUrl === before;
     activeCatalogueId = id;
     row.click();
     if (!alreadyCurrent) {
-      await waitFor(
-        () => location.href !== before ? semanticMenuButton() : null,
-        'the selected chat to open', 3000,
-      ).catch(() => {
-        if (!semanticMenuButton()) throw new Error('Zapia did not expose the selected chat header.');
-      });
+      try {
+        await waitFor(
+          () => location.href !== before ? semanticMenuButton() : null,
+          'the selected chat to open', 3000,
+        );
+      } catch (error) {
+        activeCatalogueId = previousActiveId;
+        activeCatalogueUrl = previousActiveUrl;
+        if (!semanticMenuButton()) {
+          throw new Error('Zapia did not expose the selected chat header.');
+        }
+      }
     }
     await scrollSidebarToTop();
     activeCatalogueUrl = location.href;
@@ -1671,6 +1704,30 @@
       },
     );
 
+    if (preferences.hiddenChats?.length) {
+      const hiddenSection = document.createElement('div');
+      hiddenSection.className = 'zapia-manager-settings-hidden-section';
+      const hiddenTitle = document.createElement('h3');
+      hiddenTitle.textContent = 'Hidden chats';
+      const hiddenList = document.createElement('div');
+      hiddenList.className = 'zapia-manager-settings-hidden-list';
+      for (const hidden of preferences.hiddenChats) {
+        const row = document.createElement('div');
+        row.className = 'zapia-manager-settings-hidden-row';
+        const label = document.createElement('span');
+        label.textContent = hidden.title || hidden.id;
+        const restore = button('Restore', 'Make this chat visible in catalogue', () => {
+          unhideChat(hidden.id);
+          dialog.close();
+          configurePreferences();
+        });
+        row.append(label, restore);
+        hiddenList.append(row);
+      }
+      hiddenSection.append(hiddenTitle, hiddenList);
+      dialog.append(hiddenSection);
+    }
+
     actions.append(cancel, save);
     dialog.append(title, fields, feedback, actions);
 
@@ -1748,8 +1805,9 @@
   }
 
   function filteredChats() {
+    const visibleKnownChats = excludeHiddenChats(knownChats, preferences.hiddenChats);
     return filterChatsByQuery(
-      catalogueView(knownChats, activeFilters, preferences.prefixes, preferences.view),
+      catalogueView(visibleKnownChats, activeFilters, preferences.prefixes, preferences.view),
       catalogueSearchQuery,
     );
   }
@@ -2054,6 +2112,54 @@
     renderManagerPanel();
   }
 
+  function hideChat(chatId, chatTitle = '') {
+    const current = preferences.hiddenChats ?? [];
+    if (current.some((c) => c.id === chatId)) return;
+    savePreferences(
+      { ...preferences, hiddenChats: [...current, { id: chatId, title: chatTitle || chatId }] },
+      window.localStorage,
+    );
+    selectedChatIds.delete(chatId);
+    pruneHiddenSelection();
+    renderManagerPanel();
+  }
+
+  function unhideChat(chatId) {
+    const current = preferences.hiddenChats ?? [];
+    savePreferences(
+      { ...preferences, hiddenChats: current.filter((c) => c.id !== chatId) },
+      window.localStorage,
+    );
+    renderManagerPanel();
+  }
+
+  function promptUnavailableChatRecovery(chatId) {
+    const chat = knownChats.find((c) => c.id === chatId) ?? { id: chatId, title: chatId };
+    const confirmed = window.confirm(
+      `Zapia could not load "${chat.title}".\n\nDo you want to try deleting it from Zapia?\n(If Zapia cannot delete this chat, it will be hidden in Zapia Manager and diagnostic details will be logged in the console for Zapia support).`,
+    );
+    if (!confirmed) return;
+    void runChatAction(async () => {
+      try {
+        const row = await findChatRow(chatId);
+        await deleteChat(row);
+        toast(`Deleted "${chat.title}".`, 'info');
+      } catch (deleteError) {
+        const payload = buildSupportDiagnosticPayload(deleteError, {
+          id: chatId,
+          title: chat.title,
+          url: location.href,
+        });
+        console.error('[Zapia Manager] Unrecoverable chat diagnostic report for Zapia support:', payload);
+        hideChat(chatId, chat.title);
+        toast(
+          `Zapia could not delete "${chat.title}". It has been hidden in Zapia Manager and diagnostic details were logged to the console.`,
+          'warning',
+        );
+      }
+    }, { refresh: true });
+  }
+
   function setViewOption(key, value) {
     savePreferences({ ...preferences, view: { ...preferences.view, [key]: value } }, window.localStorage);
     pruneHiddenSelection();
@@ -2171,11 +2277,18 @@
 
   async function openCatalogueChat(id) {
     await runChatAction(async () => {
+      let failed = false;
       try {
         const row = await findChatRow(id);
         await activateNativeChat(row);
+      } catch (error) {
+        failed = true;
+        throw error;
       } finally {
         await scrollSidebarToTop();
+        if (failed) {
+          queueMicrotask(() => promptUnavailableChatRecovery(id));
+        }
       }
     }, { refresh: false });
   }
@@ -2599,6 +2712,11 @@
       .zapia-manager-settings input { box-sizing: border-box; inline-size: 100%; border: 1px solid #454d4b; border-radius: 5px; background: #242828; color: #f2f3f3; font: inherit; padding: 7px; }
       .zapia-manager-settings-feedback { display: block; min-block-size: 18px; margin-top: 8px; color: #f0b65a; font-size: 12px; }
       .zapia-manager-settings-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 14px; }
+      .zapia-manager-settings-hidden-section { margin-top: 14px; padding-top: 10px; border-top: 1px solid #373b3b; }
+      .zapia-manager-settings-hidden-section h3 { margin: 0 0 8px; font-size: 13px; color: #f0b65a; }
+      .zapia-manager-settings-hidden-list { display: grid; gap: 6px; max-block-size: 140px; overflow: auto; }
+      .zapia-manager-settings-hidden-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; padding: 3px 0; border-bottom: 1px dashed #2a2e2e; }
+      .zapia-manager-settings-hidden-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 200px; }
       .zapia-manager-toast { position: fixed; z-index: 2147483647 !important; right: 16px; bottom: 16px; max-inline-size: min(420px, calc(100vw - 32px)); padding: 10px; border-radius: 6px; background: #222; color: #fff; font: 14px system-ui, sans-serif; pointer-events: auto !important; }
       .zapia-manager-toast-error { background: #9f1d1d; }
       .zapia-manager-toast-warning { background: #7b5600; }
@@ -2626,9 +2744,8 @@
 
     later(syncLoop, 500);
   }
-
   window.__zapiaManager = Object.freeze({
-    version: '0.5.10',
+    version: '0.5.11',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

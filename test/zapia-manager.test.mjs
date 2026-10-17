@@ -356,3 +356,34 @@ test('loadPreferences restores view options and default panel state', () => {
   });
   assert.deepEqual(minimized.panel, { minimized: true });
 });
+
+test('excludeHiddenChats removes hidden chat IDs while preserving catalogue ordering', () => {
+  const chats = [
+    { id: '1', title: 'Normal' },
+    { id: '2', title: 'Broken Thread' },
+    { id: '3', title: 'Agent' },
+  ];
+
+  assert.deepEqual(manager.excludeHiddenChats(chats, [{ id: '2', title: 'Broken Thread' }]), [
+    { id: '1', title: 'Normal' },
+    { id: '3', title: 'Agent' },
+  ]);
+  assert.deepEqual(manager.excludeHiddenChats(chats, []), chats);
+});
+
+test('buildSupportDiagnosticPayload creates structured, privacy-safe report for Zapia support', () => {
+  const payload = manager.buildSupportDiagnosticPayload(new Error('Zapia did not expose the selected chat header.'), {
+    id: 'ape@079ca3e6-1c26-5c59-be32-01a36c9e3457',
+    title: 'Broken Chat',
+    url: 'https://app.zapia.com/chat?pulsusNumber=ape@079ca3e6-1c26-5c59-be32-01a36c9e3457',
+    userAgent: 'Mozilla/5.0 TestBrowser',
+  });
+
+  assert.equal(payload.error, 'Zapia did not expose the selected chat header.');
+  assert.equal(payload.chatId, 'ape@079ca3e6-1c26-5c59-be32-01a36c9e3457');
+  assert.equal(payload.chatTitle, 'Broken Chat');
+  assert.equal(payload.currentUrl, 'https://app.zapia.com/chat?pulsusNumber=ape@079ca3e6-1c26-5c59-be32-01a36c9e3457');
+  assert.equal(payload.userAgent, 'Mozilla/5.0 TestBrowser');
+  assert.ok(payload.timestamp);
+  assert.ok(payload.instructions.includes('Zapia support'));
+});
