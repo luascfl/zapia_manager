@@ -430,3 +430,33 @@ test('pointInChatViewport safely handles missing viewport or points outside', ()
   assert.equal(manager.pointInChatViewport(vp, 100, 750), false); // outside bottom
   assert.equal(manager.pointInChatViewport(vp, NaN, 300), false);
 });
+
+test('isChatHeaderControl accepts buttons in the chat header band and rejects messages, links, cards, or grouped elements', () => {
+  // Real Zapia header "Mais ações" button
+  assert.equal(manager.isChatHeaderControl({
+    parentRole: null,
+    rect: { left: 931, top: 8, width: 44, height: 44 },
+    navRight: 280,
+  }), true);
+
+  // Button nested inside a message card / rich link (Flutter groups messages)
+  assert.equal(manager.isChatHeaderControl({
+    parentRole: 'group',
+    rect: { left: 326, top: 12, width: 200, height: 40 },
+    navRight: 280,
+  }), false);
+
+  // Button below header area (e.g., inside message list, copy, share, audio)
+  assert.equal(manager.isChatHeaderControl({
+    parentRole: null,
+    rect: { left: 347, top: 392, width: 36, height: 36 },
+    navRight: 280,
+  }), false);
+
+  // Button inside sidebar / navigation band
+  assert.equal(manager.isChatHeaderControl({
+    parentRole: null,
+    rect: { left: 200, top: 10, width: 36, height: 36 },
+    navRight: 280,
+  }), false);
+});

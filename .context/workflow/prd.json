@@ -57,7 +57,7 @@
       ],
       "priority": "medium",
       "passes": false,
-      "notes": "Blocked on a repro. 15 chats exposed one `Mais ações` and no link nodes; Alt+C produced only `Mais ações` then `Renomear` clicks. Message bodies do not render in the automation Chrome. Needs from the user: which shortcut, link domain, same or new tab, mouse position. Update 2026-10-17: messages now render in the automation Chrome and a chat with a link exists (`Abra o roteiro no Google Docs`, chat `[2] Capítulo de Larissa...`), so a repro attempt is possible."
+      "notes": "Not reproduced, so still open. 2026-10-17 live run (Chrome CDP, chat with rich link cards, real Alt+C/Alt+V key events, spies on window.open/pushState/click): every click went to header `Mais ações`, native `Renomear` and the dialog OK; no window.open, no navigation, no errors. Hardening in 0.5.15: `semanticMenuButton` now requires the chat header band (top < 70, right of the sidebar, parent not role=group) via pure helper `isChatHeaderControl`; a decoy `Mais ações` button inserted in the message area before the real one in DOM order was ignored. Unproven: that this was the user's cause. Known remaining unanchored click: `visibleSaveAction` falls back to any semantic button labelled exactly Salvar/Save/Confirmar/OK. Needs from the user: which shortcut, link domain, same or new tab, mouse position."
     },
     {
       "id": "US-005",

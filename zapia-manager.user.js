@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.14
+// @version      0.5.15
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -80,6 +80,13 @@
 
   function normalizeSpace(value) {
     return String(value ?? '').replace(/\s+/gu, ' ').trim();
+  }
+
+  function isChatHeaderControl({ parentRole, rect, navRight }) {
+    return parentRole !== 'group'
+      && rect.left >= navRight
+      && rect.top >= 0
+      && rect.top < 70;
   }
 
   function isMenuButtonLabel(label) {
@@ -513,6 +520,7 @@
     canActivateDeleteCandidate,
     isHoverActionLabel,
     isMenuButtonLabel,
+    isChatHeaderControl,
     isNavigationActionLabel,
     sidebarPlacement,
     safeProfileTop,
@@ -970,9 +978,16 @@
 
   function semanticMenuButton() {
     const nav = getChatViewport()?.nav;
+    const navRight = nav?.getBoundingClientRect().right ?? 280;
+
     return semanticButtons().find((element) =>
       !nav?.contains(element)
-      && isMenuButtonLabel(semanticLabel(element)),
+      && isMenuButtonLabel(semanticLabel(element))
+      && isChatHeaderControl({
+        parentRole: element.parentElement?.getAttribute('role'),
+        rect: element.getBoundingClientRect(),
+        navRight,
+      }),
     ) ?? null;
   }
 
@@ -2782,7 +2797,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.14',
+    version: '0.5.15',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

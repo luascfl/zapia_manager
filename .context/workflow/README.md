@@ -1,6 +1,6 @@
 # Ralph workflow
 
-Milestone 4, US-006, is complete: the catalogue occupies only the native sidebar's chat-list area, with native title/menu navigation and no floating panel. Version 0.4.0 was validated live, saved in Tampermonkey, compared with the reopened persisted source and exercised on a fresh Zapia page. See `.context/plans/ROADMAP.md`. US-004 remains open; message bodies now render, so its shortcut/link investigation can resume as a separate story.
+Milestone 4, US-006, is complete: the catalogue occupies only the native sidebar's chat-list area, with native title/menu navigation and no floating panel. Version 0.5.15 is saved in Tampermonkey and verified on a fresh page. See `.context/plans/ROADMAP.md`. US-004 remains open: the shortcut/link case was not reproduced; 0.5.15 only restricts the native menu button to the chat header band.
 
 Definition of done for every story:
 

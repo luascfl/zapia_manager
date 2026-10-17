@@ -204,3 +204,12 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Fechamento: `graphify update .` atualizou o grafo de código para 119 nós, 267 relações e 10 comunidades. Evidência sanitizada em `.context/workflow/ralph/evidence/us-006.json`, ignorada pelo Git.
 - Reutilizado o comando final `scripts/reload-userscript.mjs`; nenhum script auxiliar paralelo foi criado. Procedimento de foco/Escape e validação da instalação incorporado à referência existente `flutter-canvas-spa-cdp-testing.md` do hub gerenciado `browser-automation`.
 - Capturas temporárias deste smoke, com conteúdo pessoal, removidas após inspeção visual. Busca em `./tmp` e nos temporários nomeados para esta story não encontrou outros auxiliares; artefatos antigos ou ambíguos não foram apagados.
+
+## US-004 atalho e link, 0.5.15, 2026-10-17
+
+- Tentativa de repro no Chrome persistente (CDP), num chat com cards de link, com eventos reais de `Alt+C` e `Alt+V` e spies em `window.open`, `history.pushState` e cliques: os cliques foram só para `Mais ações` do cabeçalho, `Renomear` nativo e `OK` do diálogo. Sem `window.open`, sem navegação, sem erros. O caso do usuário não foi reproduzido, então a US-004 continua aberta.
+- Estrutura observada: o `Mais ações` do cabeçalho divide o pai com o botão do título do chat (sem `role=group`); cards de mensagem e botões de link ficam dentro de nós `role=group`.
+- Endurecimento na 0.5.15: `semanticMenuButton` exige a faixa do cabeçalho pelo helper puro `isChatHeaderControl` (pai sem `role=group`, à direita da barra lateral, topo entre 0 e 70). Um botão isca `Mais ações` na área de mensagens, antes do real na ordem do DOM, foi ignorado e o clique foi para o botão do cabeçalho. Que essa seja a causa do usuário é [INFERENCE].
+- Clique ainda sem âncora: `visibleSaveAction` recorre a qualquer botão semântico com rótulo exato Salvar, Save, Confirmar, Confirm ou OK.
+- Acidente no repro: um `Alt+C` sem bloqueio renomeou o chat de produção `🟡 Resumos de grupos do Whatsapp` para `✔ ...`. Foi revertido com `Alt+V` e o título original foi confirmado. Nas execuções seguintes o spy bloqueia o salvar final.
+- Evidências: `node --check` e 40 testes Node passaram (novo teste de `isChatHeaderControl`). O Tampermonkey Beta salvou a 0.5.15 e o dashboard recarregado mostra 0.5.15. Uma página nova de `app.zapia.com/chat`, sem injeção, carregou a 0.5.15 com um painel e um estilo.
