@@ -18,9 +18,9 @@
     prefixes: ['✔', '🟡'],
     view: { prioritizeAgents: false, prioritizeIds: false, hideCompleted: false, onlyUnprefixed: false },
     shortcuts: {
-      'prefix-check': { altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: 'KeyC' },
-      'prefix-yellow': { altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: 'KeyY' },
-      delete: { altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: 'KeyX' },
+      'prefix-check': { altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, code: 'KeyC' },
+      'prefix-yellow': { altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, code: 'KeyY' },
+      delete: { altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, code: 'KeyX' },
     },
   });
 
@@ -217,6 +217,11 @@
     return result;
   }
 
+  function withoutChatId(chats, id) {
+    return chats.filter((chat) => chat.id !== id);
+  }
+
+
   function canActivateDeleteCandidate({ containerRole, label }) {
     return containerRole === 'menu'
       && DELETE_PATTERN.test(normalizeSpace(label));
@@ -253,13 +258,20 @@
   function currentChatShortcut(event) {
     if (event.repeat) return null;
 
-    return Object.entries(preferences.shortcuts).find(([, shortcut]) =>
-      shortcut.code === event.code
-      && shortcut.altKey === event.altKey
-      && shortcut.shiftKey === event.shiftKey
-      && shortcut.ctrlKey === event.ctrlKey
-      && shortcut.metaKey === event.metaKey,
-    )?.[0] ?? null;
+    for (const [action, shortcut] of Object.entries(preferences.shortcuts)) {
+      if (
+        shortcut.code === event.code
+        && shortcut.altKey === event.altKey
+        && shortcut.ctrlKey === event.ctrlKey
+        && shortcut.metaKey === event.metaKey
+      ) {
+        if (shortcut.shiftKey === event.shiftKey || (shortcut.altKey && !shortcut.ctrlKey && !shortcut.metaKey)) {
+          return action;
+        }
+      }
+    }
+
+    return null;
   }
 
   function selectRootChatRows(candidates) {
@@ -452,6 +464,7 @@
     shouldShowChatManager,
     requestZapiaCacheRecovery,
     currentChatShortcut,
+    withoutChatId,
     parseShortcut,
     shortcutLabel,
     shortcutFromEvent,
@@ -1189,6 +1202,10 @@
   }
 
   async function openCurrentNativeActions() {
+    if (visibleMenuAction(MENU_RENAME_ACTION) || visibleMenuAction(MENU_DELETE_ACTION)) {
+      return;
+    }
+
     const menuButton = await waitFor(
       semanticMenuButton,
       'the current chat native more-actions button',
@@ -1235,6 +1252,7 @@
 
   async function deleteChat(row) {
     let expectedTitle = '';
+    const targetId = row ? chatIdentity(row) : activeCatalogueId;
     if (row) {
       expectedTitle = chatTitle(row);
       assertDeletableTitle(expectedTitle, preferences.prefixes);
@@ -1270,6 +1288,12 @@
       () => !nativeDeleteDialogOpen(),
       'the native delete confirmation to close',
     );
+
+    if (targetId) {
+      setKnownChats(withoutChatId(knownChats, targetId));
+      selectedChatIds.delete(targetId);
+      if (activeCatalogueId === targetId) activeCatalogueId = null;
+    }
   }
 
   function button(label, title, handler) {
@@ -1648,6 +1672,11 @@
 
   function installKeyboardShortcuts() {
     document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && activeRowMenu) {
+        closeRowMenu();
+        return;
+      }
+
       if (
         event.defaultPrevented
         || isEditableTarget(event.target)
@@ -1666,6 +1695,12 @@
 
       void runCurrentChatShortcut(action);
     }, { signal: lifetime.signal });
+
+    document.addEventListener('pointerdown', (event) => {
+      if (activeRowMenu && !activeRowMenu.contains(event.target) && !event.target.closest?.('.zapia-manager-chat-menu')) {
+        closeRowMenu();
+      }
+    }, { signal: lifetime.signal, capture: true });
   }
 
   const SIDEBAR_SCROLL_STEP = 160;
@@ -2004,12 +2039,88 @@
     renderManagerPanel();
   }
 
-  async function openCatalogueChat(id, menu = false) {
+  let activeRowMenu = null;
+
+  function closeRowMenu() {
+    if (activeRowMenu) {
+      activeRowMenu.remove();
+      activeRowMenu = null;
+    }
+  }
+
+  function openRowMenu(triggerButton, chat) {
+    if (activeRowMenu?.dataset.chatId === chat.id) {
+      closeRowMenu();
+      return;
+    }
+    closeRowMenu();
+
+    const menu = document.createElement('div');
+    menu.className = 'zapia-manager-row-menu';
+    menu.dataset.zapiaManagerControl = 'true';
+    menu.dataset.chatId = chat.id;
+    protectManagedSurface(menu);
+
+    const isAgent = chatMatchesFilter(chat.title, 'prefix-1', preferences.prefixes);
+
+    const renameItem = button('Renomear', 'Renomear conversa', async () => {
+      closeRowMenu();
+      await runChatAction(async () => {
+        const row = await findChatRow(chat.id);
+        await activateNativeChat(row);
+        await openCurrentNativeActions();
+        const editAction = await waitFor(
+          () => visibleMenuAction(MENU_RENAME_ACTION),
+          'the native rename action',
+        );
+        editAction.click();
+      }, { refresh: false });
+    });
+
+    const prefix0Item = button(`${preferences.prefixes[0]} Prefixar`, `Prefixar com ${preferences.prefixes[0]}`, async () => {
+      closeRowMenu();
+      await runChatAction(async () => {
+        await rediscoverAndApply(chat.id, `${preferences.prefixes[0]} `);
+      });
+    });
+
+    const prefix1Item = button(`${preferences.prefixes[1]} Prefixar`, `Prefixar com ${preferences.prefixes[1]}`, async () => {
+      closeRowMenu();
+      await runChatAction(async () => {
+        await rediscoverAndApply(chat.id, `${preferences.prefixes[1]} `);
+      });
+    });
+
+    const deleteItem = button('Excluir', isAgent ? 'Agentes/habilidades protegidos contra exclusão' : 'Excluir conversa', async () => {
+      closeRowMenu();
+      assertDeletableTitle(chat.title, preferences.prefixes);
+      await runChatAction(async () => {
+        await rediscoverAndDelete(chat.id);
+      });
+    });
+    deleteItem.classList.add('is-danger');
+    if (isAgent) {
+      deleteItem.disabled = true;
+    }
+
+    menu.append(renameItem, prefix0Item, prefix1Item, deleteItem);
+    document.body.append(menu);
+    activeRowMenu = menu;
+
+    const rect = triggerButton.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const top = Math.min(rect.bottom + 4, window.innerHeight - menuRect.height - 8);
+    const left = Math.max(8, rect.right - menuRect.width);
+
+    menu.style.top = `${Math.max(0, top)}px`;
+    menu.style.left = `${left}px`;
+  }
+
+  async function openCatalogueChat(id) {
     await runChatAction(async () => {
       try {
         const row = await findChatRow(id);
-        if (menu) await openNativeActions(row);
-        else await activateNativeChat(row);
+        await activateNativeChat(row);
       } finally {
         await scrollSidebarToTop();
       }
@@ -2146,7 +2257,7 @@
       open.classList.add('zapia-manager-chat-title');
       open.disabled = busy;
       if (chat.id === activeCatalogueId) open.setAttribute('aria-current', 'page');
-      const menu = button('⋯', `Mais ações de ${chat.title}`, () => openCatalogueChat(chat.id, true));
+      const menu = button('⋯', `Mais ações de ${chat.title}`, () => openRowMenu(menu, chat));
       menu.classList.add('zapia-manager-chat-menu');
       menu.disabled = busy;
       option.append(select, open, menu);
@@ -2154,6 +2265,7 @@
     }
     panel.append(list);
     list.scrollTop = previousScroll;
+    list.addEventListener('scroll', closeRowMenu, { passive: true });
 
     if (selectedChatIds.size) {
       const actions = document.createElement('div');
@@ -2197,8 +2309,10 @@
 
   async function rediscoverAndDelete(id) {
     await deleteChat(await findChatRow(id));
+    setKnownChats(withoutChatId(knownChats, id));
+    selectedChatIds.delete(id);
+    if (activeCatalogueId === id) activeCatalogueId = null;
   }
-
   function syncNativeSidebarLayout() {
     const panel = document.querySelector('[data-zapia-manager-panel]');
     if (!panel) return;
@@ -2354,6 +2468,22 @@
       .zapia-manager-chat-title:hover:not(:disabled) { background: transparent; }
       .zapia-manager-chat-menu { flex: 0 0 auto; border: 0; padding: 0 2px; min-inline-size: 20px; opacity: 0; }
       .zapia-manager-chat-option:hover .zapia-manager-chat-menu, .zapia-manager-chat-option:focus-within .zapia-manager-chat-menu { opacity: 1; }
+      .zapia-manager-row-menu {
+        position: fixed; z-index: 2147483647; display: flex; flex-direction: column;
+        min-inline-size: 148px; background: #1e2020; border: 1px solid #373b3b;
+        border-radius: 8px; box-shadow: 0 8px 24px #000a; padding: 4px; gap: 2px;
+        font: 13px/1.35 Inter, system-ui, sans-serif; pointer-events: auto !important;
+      }
+      .zapia-manager-row-menu button {
+        display: flex; align-items: center; justify-content: flex-start;
+        inline-size: 100%; border: 0; border-radius: 5px; background: transparent;
+        color: #f2f3f3; padding: 6px 10px; font-size: 12px; text-align: left;
+        cursor: pointer; min-block-size: 26px;
+      }
+      .zapia-manager-row-menu button:hover:not(:disabled) { background: #2a2e2e; }
+      .zapia-manager-row-menu button:disabled { opacity: .45; cursor: default; }
+      .zapia-manager-row-menu button.is-danger { color: #f28b82; }
+      .zapia-manager-row-menu button.is-danger:hover:not(:disabled) { background: #4a2222; }
       .zapia-manager-empty { display: block; padding: 12px 8px; color: #a4abaa; }
       .zapia-manager-panel-actions { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 8px; border-top: 1px solid #292b2b; font-size: 11px; }
       .zapia-manager-settings { z-index: 2147483647; inline-size: min(360px, calc(100vw - 32px)); border: 1px solid #454d4b; border-radius: 10px; background: #181919; color: #f2f3f3; box-shadow: 0 16px 40px #0008; font: 14px/1.35 Inter, system-ui, sans-serif; }

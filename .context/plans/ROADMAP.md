@@ -41,3 +41,9 @@ Dependency: Milestone 3 catalogue and in-place development reload.
 - US-006 (done): integrate the catalogue and controls into the native sidebar's chat-list area, validate the surface, then update and verify Tampermonkey. Delivered in 0.4.0.
 
 
+## Milestone 5: Advanced catalogue rules and reusable-agent safety
+
+Dependency: Milestone 4 integrated sidebar and lifecycle reload.
+
+- US-007 (active): persist four optional catalogue rules, preserve structurally identified native pins, and guard all Manager deletion paths for reusable agents. Validate browser behavior before updating Tampermonkey.
+

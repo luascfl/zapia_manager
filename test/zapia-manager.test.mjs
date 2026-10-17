@@ -24,12 +24,15 @@ test('a delete candidate is safe only in a native menu', () => {
   assert.equal(manager.canActivateDeleteCandidate({ containerRole: 'menu', label: 'Salvar' }), false);
 });
 
-test('current-chat shortcuts accept only the intended unmodified chords', () => {
+test('current-chat shortcuts accept both Alt and Alt+Shift chords while rejecting unmodified or browser keys', () => {
+  assert.equal(manager.currentChatShortcut({ altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, repeat: false, code: 'KeyC' }), 'prefix-check');
   assert.equal(manager.currentChatShortcut({ altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, repeat: false, code: 'KeyC' }), 'prefix-check');
+  assert.equal(manager.currentChatShortcut({ altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, repeat: false, code: 'KeyY' }), 'prefix-yellow');
   assert.equal(manager.currentChatShortcut({ altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, repeat: false, code: 'KeyY' }), 'prefix-yellow');
+  assert.equal(manager.currentChatShortcut({ altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, repeat: false, code: 'KeyX' }), 'delete');
   assert.equal(manager.currentChatShortcut({ altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, repeat: false, code: 'KeyX' }), 'delete');
-  assert.equal(manager.currentChatShortcut({ altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, repeat: false, code: 'KeyC' }), null);
-  assert.equal(manager.currentChatShortcut({ altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, repeat: true, code: 'KeyX' }), null);
+  assert.equal(manager.currentChatShortcut({ altKey: false, shiftKey: false, ctrlKey: true, metaKey: false, repeat: false, code: 'KeyC' }), null);
+  assert.equal(manager.currentChatShortcut({ altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, repeat: true, code: 'KeyX' }), null);
 });
 
 test('shortcut configuration parses only modified supported keys', () => {
@@ -43,6 +46,7 @@ test('reserved browser shortcuts are rejected while custom chords are accepted',
     assert.ok(manager.shortcutValidationError(manager.parseShortcut(chord)));
   }
   assert.equal(manager.shortcutValidationError(manager.parseShortcut('Alt+Shift+C')), null);
+  assert.equal(manager.shortcutValidationError(manager.parseShortcut('Alt+C')), null);
 });
 
 test('native menu actions match only their exact label, never link text', () => {
@@ -116,6 +120,11 @@ test('merging scan windows keeps sidebar order and never duplicates', () => {
   list = manager.mergeChatList(list, [chat('x'), chat('a')]);
 
   assert.deepEqual(list.map((c) => c.id), ['x', 'a', 'b', 'c', 'd', 'e']);
+});
+test('withoutChatId removes matching chats and preserves order', () => {
+  const chats = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }, { id: 'c', title: 'C' }];
+  assert.deepEqual(manager.withoutChatId(chats, 'b'), [{ id: 'a', title: 'A' }, { id: 'c', title: 'C' }]);
+  assert.deepEqual(manager.withoutChatId(chats, 'unknown'), chats);
 });
 
 test('chat titles drop the unread counter so identities stay stable', () => {

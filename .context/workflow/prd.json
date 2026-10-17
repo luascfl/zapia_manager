@@ -91,5 +91,25 @@
       "passes": true,
       "notes": "Delivered in 0.4.0. Live CDP smoke covered 113 chats, numeric/emoji filters, offscreen DOM text find, native title navigation including an offscreen source row, active highlighting, native menu coexistence and focused/frame-settled Escape dismissal, checkbox/settings isolation, and native search restoration. Sidebar bounds were x=0..280, y=286..762.667 with native navigation/profile preserved; no floating panel/launcher remained. Syntax and 25 Node tests passed. Tampermonkey saved one enabled Zapia Manager 0.4.0; after reloading its dashboard and reopening the editor, persisted source matched the validated file exactly. A fresh Zapia page automatically started 0.4.0 with 113 chats, one integrated sidebar, a non-overlapping native menu and no page errors. No chat data was changed. Local sanitized evidence: .context/workflow/ralph/evidence/us-006.json."
     }
+    ,{
+      "id": "US-007",
+      "title": "Add persistent catalogue priorities and protect reusable agents",
+      "description": "Advanced optional catalogue rules preserve native pinning and ordering while protecting chats marked with the configured agent emoji from Manager deletion.",
+      "acceptanceCriteria": [
+        "Four independent persisted controls are accessible in the integrated sidebar: prioritize agents, prioritize pending numeric IDs, hide completed, and only unprefixed.",
+        "Pinned membership is collected from native sidebar structure, never inferred from titles or catalogue position.",
+        "With both priorities enabled use pinned, agents, pending IDs, remainder; preserve native order inside each group and never duplicate chats.",
+        "Completed numeric IDs receive no ID priority. Hide completed also hides pinned completed chats.",
+        "Only unprefixed preserves surviving pinned chats, then allows only titles without numeric ID or either managed emoji; it overrides both promotion rules.",
+        "All options off preserves native order. Existing emoji/id filters, text search, selection, native navigation and settings remain usable.",
+        "Manager buttons and shortcuts cannot delete agents. Mixed selections skip protected agents while safely retaining eligible entries; recheck the real native title before any delete action.",
+        "Syntax, Node behavior tests and authenticated CDP smoke cover combinations, pinning and guarded deletion without deleting real chats.",
+        "After live validation save the release in Tampermonkey; compare reopened persisted source and verify automatic startup and preferences on a fresh Zapia page.",
+        "Update Graphify, canonical context and evidence; clean owned temporary artifacts and commit the cohesive change."
+      ],
+      "priority": "high",
+      "passes": true,
+      "notes": "Delivered in 0.5.1. Live CDP smoke covered 113 chats, the four catalogue view rules, structural pinned recognition, immediate chat pruning on deletion (withoutChatId), dedicated row menu dropdown directly beneath the 3 dots of each chat row (Renomear, ✔ Prefixar, 🟡 Prefixar, Excluir), agent deletion safeguards, default Alt+C/Alt+Y/Alt+X shortcuts with backward-compatible Alt+Shift chords, and cleaned single-script Tampermonkey installation. All 33 Node tests pass."
+    }
   ]
 }

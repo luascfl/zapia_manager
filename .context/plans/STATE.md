@@ -2,12 +2,11 @@
 
 ## Active milestone
 
-Milestone 4, Seamless native-area catalogue, concluída na versão 0.4.0.
+Milestone 5, filtros avançados e proteção de agentes, concluída na versão 0.5.1.
 
 ## Active story
 
-US-006 concluída e instalada no Tampermonkey. Próxima story recomendada: retomar US-004, investigação do atalho que abre links; sem implementação adicional neste ciclo.
-
+US-007 concluída na versão 0.5.1: quatro opções persistidas, fixados nativos estruturais, proteção contra exclusão de agentes, remoção imediata de chats excluídos no catálogo, menu contextual próprio sob os 3 pontinhos de cada linha e suporte a Alt+C para prefixar. US-004 permanece fora deste ciclo.
 ## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.

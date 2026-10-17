@@ -18,6 +18,8 @@ A dependency-free userscript for Tampermonkey or Violentmonkey that manages Zapi
 - Deletes selected chats one at a time through Zapia’s native menu, confirming only inside the native `Excluir conversa?` dialog.
 - Re-mounts controls after SPA changes with a `MutationObserver`.
 - Shows bulk actions only while chats are selected; emojis and keyboard shortcuts remain configurable through `Configurar`.
+- Offers four persisted catalogue options under `Filtros e prioridades`: prioritize agents (🟡), prioritize pending IDs, hide completed (✔) and only unprefixed; native pinned chats always stay first. Agents cannot be deleted through the Manager.
+- Updates itself from GitHub: `@updateURL` and `@downloadURL` point to the raw file of `luascfl/zapia_manager` on `main`; raise `@version` for every release.
 
 ## Entry points
 
