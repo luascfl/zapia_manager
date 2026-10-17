@@ -2,11 +2,11 @@
 
 ## Active milestone
 
-Milestone 5, filtros avançados e proteção de agentes, concluída na versão 0.5.1.
+Milestone 5, filtros avançados e opções de catálogo, concluída na versão 0.5.2.
 
 ## Active story
 
-US-007 concluída na versão 0.5.1: quatro opções persistidas, fixados nativos estruturais, proteção contra exclusão de agentes, remoção imediata de chats excluídos no catálogo, menu contextual próprio sob os 3 pontinhos de cada linha e suporte a Alt+C para prefixar. US-004 permanece fora deste ciclo.
+US-007 concluída: quatro opções persistidas, fixados nativos estruturais, remoção imediata de chats excluídos no catálogo, menu contextual próprio sob os 3 pontinhos de cada linha e suporte a Alt+C para prefixar. Na versão 0.5.2, a restrição de exclusão para agentes/habilidades foi removida; todos os chats podem ser excluídos via fluxo nativo do Zapia. US-004 permanece fora deste ciclo.
 ## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.
@@ -19,6 +19,14 @@ US-007 concluída na versão 0.5.1: quatro opções persistidas, fixados nativos
 - `node --test test/zapia-manager.test.mjs` passed, 6 tests, 0 failures, on 2026-09-06.
 - `graphify update .` rebuilt `.context/graphify-out` with 30 nodes and 56 edges.
 - LibreWolf 142.0.1 and an enabled Violentmonkey extension are present in the default profile.
+
+## Versão 0.5.2: Remoção da proteção contra exclusão de agentes
+
+- Versão 0.5.2 removeu a barreira artificial de exclusão para chats de agentes/habilidades (prefix-1).
+- O menu contextual da linha (`⋯`) e a barra de ações em lote mantêm o botão "Excluir" habilitado para qualquer chat selecionado.
+- A validação de exclusão exige apenas que o título do chat seja confirmado antes de acionar a ação nativa; a confirmação final permanece sob o diálogo nativo do Zapia.
+- Sintaxe Node e 33 testes automatizados aprovados (`node --check zapia-manager.user.js` e `node --test test/zapia-manager.test.mjs`).
+- Hot reload aplicado via CDP sem recarregar a aba autenticada do Zapia; smoke test confirmou botão "Excluir" habilitado no menu da linha para chat com emoji de agente (`🟡 Zotero`) e botão de exclusão habilitado na barra em lote com agente selecionado, sem disparar exclusão real.
 
 ## Initial validation pending (superseded below)
 

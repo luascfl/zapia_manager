@@ -45,5 +45,5 @@ Dependency: Milestone 3 catalogue and in-place development reload.
 
 Dependency: Milestone 4 integrated sidebar and lifecycle reload.
 
-- US-007 (active): persist four optional catalogue rules, preserve structurally identified native pins, and guard all Manager deletion paths for reusable agents. Validate browser behavior before updating Tampermonkey.
+- US-007 (done): persist four optional catalogue rules and preserve structurally identified native pins. In version 0.5.2, agent deletion restrictions were removed per user direction so all chats can be deleted via native confirmation.
 

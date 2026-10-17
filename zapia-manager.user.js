@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.1
+// @version      0.5.2
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -186,16 +186,12 @@
     return Number.isFinite(start) && Number.isFinite(end) && position >= start && position < end;
   }
 
-  function deletableSelection(chats, ids, prefixes) {
-    return chats.filter((chat) => ids.has(chat.id)
-      && !chatMatchesFilter(chat.title, 'prefix-1', prefixes));
+  function selectedChats(chats, ids) {
+    return chats.filter((chat) => ids.has(chat.id));
   }
 
-  function assertDeletableTitle(title, prefixes) {
+  function assertChatTitle(title) {
     if (!title) throw new Error('Não foi possível confirmar o título do chat. Exclusão bloqueada.');
-    if (chatMatchesFilter(title, 'prefix-1', prefixes)) {
-      throw new Error('Agentes/habilidades são protegidos contra exclusão pelo Zapia Manager.');
-    }
   }
 
   function mergeChatList(existing, found) {
@@ -457,8 +453,8 @@
     mergeChatList,
     catalogueView,
     pinnedBetweenSections,
-    deletableSelection,
-    assertDeletableTitle,
+    selectedChats,
+    assertChatTitle,
     isManagedNode,
     needsRemount,
     shouldShowChatManager,
@@ -1255,7 +1251,7 @@
     const targetId = row ? chatIdentity(row) : activeCatalogueId;
     if (row) {
       expectedTitle = chatTitle(row);
-      assertDeletableTitle(expectedTitle, preferences.prefixes);
+      assertChatTitle(expectedTitle);
       await activateNativeChat(row);
     }
     // The native header proves which chat is open; a stale header must never
@@ -1267,7 +1263,7 @@
       },
       'the selected chat header',
     ).catch(() => '');
-    assertDeletableTitle(nativeTitle, preferences.prefixes);
+    assertChatTitle(nativeTitle);
     await openCurrentNativeActions();
 
     const deleteAction = await waitFor(
@@ -2006,11 +2002,6 @@
       throw new Error('Selecione pelo menos um chat.');
     }
 
-    const eligible = deletableSelection(knownChats, selectedChatIds, preferences.prefixes);
-    const protectedCount = deletionQueue.length - eligible.length;
-    deletionQueue = eligible.map(({ id }) => id);
-    if (protectedCount) toast(`${protectedCount} agente(s)/habilidade(s) protegido(s); não serão excluídos.`, 'warning');
-    if (!deletionQueue.length) return;
 
     await runChatAction(async () => {
       for (const id of [...deletionQueue]) {
@@ -2061,7 +2052,6 @@
     menu.dataset.chatId = chat.id;
     protectManagedSurface(menu);
 
-    const isAgent = chatMatchesFilter(chat.title, 'prefix-1', preferences.prefixes);
 
     const renameItem = button('Renomear', 'Renomear conversa', async () => {
       closeRowMenu();
@@ -2091,17 +2081,14 @@
       });
     });
 
-    const deleteItem = button('Excluir', isAgent ? 'Agentes/habilidades protegidos contra exclusão' : 'Excluir conversa', async () => {
+    const deleteItem = button('Excluir', 'Excluir conversa', async () => {
       closeRowMenu();
-      assertDeletableTitle(chat.title, preferences.prefixes);
+      assertChatTitle(chat.title);
       await runChatAction(async () => {
         await rediscoverAndDelete(chat.id);
       });
     });
     deleteItem.classList.add('is-danger');
-    if (isAgent) {
-      deleteItem.disabled = true;
-    }
 
     menu.append(renameItem, prefix0Item, prefix1Item, deleteItem);
     document.body.append(menu);
@@ -2290,8 +2277,7 @@
         renderManagerPanel();
       });
       for (const action of [prefixOk, prefixYellow, remove, clear]) action.disabled = busy;
-      remove.disabled = busy || !deletableSelection(knownChats, selectedChatIds, preferences.prefixes).length;
-      if (!busy && remove.disabled) remove.title = 'Agentes/habilidades protegidos contra exclusão';
+      remove.disabled = busy || !selectedChatIds.size;
       actions.append(prefixOk, prefixYellow, remove, clear);
       panel.append(actions);
     }
@@ -2523,7 +2509,7 @@
   }
 
   window.__zapiaManager = Object.freeze({
-    version: '0.5.1',
+    version: '0.5.2',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

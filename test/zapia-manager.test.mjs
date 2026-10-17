@@ -296,7 +296,7 @@ test('catalogueView onlyUnprefixed keeps pinned chats and filters remainder to u
   assert.deepEqual(withHide.map((c) => c.id), ['p1', 'p2', 'u1', 'u2']);
 });
 
-test('deletableSelection and assertDeletableTitle protect reusable agents', () => {
+test('selected chats include reusable agents and titles require only confirmation', () => {
   const sample = [
     { id: 'a1', title: '🟡 Agente de E-mails' },
     { id: 'c1', title: 'Chat comum' },
@@ -304,16 +304,15 @@ test('deletableSelection and assertDeletableTitle protect reusable agents', () =
     { id: 'c2', title: '[1] Tarefa comum' },
   ];
   const ids = new Set(['a1', 'c1', 'a2', 'c2']);
-  const eligible = manager.deletableSelection(sample, ids, prefixes);
-  assert.deepEqual(eligible.map((c) => c.id), ['c1', 'c2']);
+  const selected = manager.selectedChats(sample, ids);
+  assert.deepEqual(selected.map((chat) => chat.id), ['a1', 'c1', 'a2', 'c2']);
 
-  // assertDeletableTitle tests
-  assert.throws(() => manager.assertDeletableTitle('🟡 Agente', prefixes), /Agentes\/habilidades são protegidos/);
-  assert.throws(() => manager.assertDeletableTitle('🟡 [1] Agente', prefixes), /Agentes\/habilidades são protegidos/);
-  assert.throws(() => manager.assertDeletableTitle('', prefixes), /Não foi possível confirmar o título/);
-  assert.doesNotThrow(() => manager.assertDeletableTitle('Chat normal', prefixes));
-  assert.doesNotThrow(() => manager.assertDeletableTitle('[1] Chat com ID', prefixes));
-  assert.doesNotThrow(() => manager.assertDeletableTitle('✔ Concluído', prefixes));
+  assert.throws(() => manager.assertChatTitle(''), /Não foi possível confirmar o título/);
+  assert.doesNotThrow(() => manager.assertChatTitle('🟡 Agente'));
+  assert.doesNotThrow(() => manager.assertChatTitle('🟡 [1] Agente'));
+  assert.doesNotThrow(() => manager.assertChatTitle('Chat normal'));
+  assert.doesNotThrow(() => manager.assertChatTitle('[1] Chat com ID'));
+  assert.doesNotThrow(() => manager.assertChatTitle('✔ Concluído'));
 });
 
 test('loadPreferences restores and validates view options', () => {
