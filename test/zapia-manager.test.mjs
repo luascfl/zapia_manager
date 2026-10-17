@@ -530,3 +530,19 @@ test('formatChatContext keeps the conversation and media, and adds agent activit
 
   assert.equal(manager.formatChatContext('Vazio', []).text, '# Vazio\n\n(no messages)');
 });
+
+test('catalogueView shows chats matching any active filter, including only-unprefixed', () => {
+  const chats = [
+    { id: 'a', title: '[4] Numbered', pinned: false },
+    { id: 'b', title: 'Plain', pinned: false },
+    { id: 'c', title: '✔ Done', pinned: false },
+    { id: 'd', title: '🟡 Agent', pinned: false },
+  ];
+  const view = { prioritizeAgents: false, prioritizeIds: false, hideCompleted: false, onlyUnprefixed: true };
+  const ids = (filters, v = view) => manager.catalogueView(chats, new Set(filters), prefixes, v).map((chat) => chat.id);
+
+  assert.deepEqual(ids(['numbered']), ['a', 'b']);
+  assert.deepEqual(ids([]), ['b']);
+  assert.deepEqual(ids(['numbered', 'prefix-1']), ['a', 'b', 'd']);
+  assert.deepEqual(ids(['numbered'], { ...view, onlyUnprefixed: false }), ['a']);
+});

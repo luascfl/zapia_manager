@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.19
+// @version      0.5.20
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -195,12 +195,19 @@
   function catalogueView(chats, filters, prefixes, view) {
     const groups = [[], [], [], []];
     const promoted = !view.onlyUnprefixed && (view.prioritizeAgents || view.prioritizeIds);
-    for (const chat of filterChats(chats, filters, prefixes)) {
+    // Filters and "only unprefixed" are alternatives: a chat shows if it matches any active one.
+    const byFilter = new Set(filterChats(chats, filters, prefixes));
+    for (const chat of chats) {
       const completed = chatMatchesFilter(chat.title, 'prefix-0', prefixes);
       const agent = chatMatchesFilter(chat.title, 'prefix-1', prefixes);
       const numbered = chatMatchesFilter(chat.title, 'numbered', prefixes);
+      const unprefixed = chat.pinned || !(completed || agent || numbered);
+      if (filters.size || view.onlyUnprefixed) {
+        const shown = (filters.size > 0 && byFilter.has(chat))
+          || (view.onlyUnprefixed && unprefixed);
+        if (!shown) continue;
+      }
       if (view.hideCompleted && completed) continue;
-      if (view.onlyUnprefixed && !chat.pinned && (completed || agent || numbered)) continue;
       const rank = !promoted ? 0 : chat.pinned ? 0
         : view.prioritizeAgents && agent ? 1
           : view.prioritizeIds && numbered && !completed ? 2 : 3;
@@ -3256,7 +3263,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.19',
+    version: '0.5.20',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

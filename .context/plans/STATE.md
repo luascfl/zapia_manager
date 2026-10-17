@@ -247,3 +247,11 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Entrega: `navigator.clipboard.writeText`; se for negado, abre um diálogo com o texto e botão Copy.
 - Evidências: 44 testes Node passaram (2 novos, ordem e duplicatas, formatação por tipo). Ao vivo: 3 chats copiados (89 mensagens) com progresso no botão; o maior chat (17 páginas, 1654 mensagens brutas) gerou 761 mensagens, igual à contagem independente da API para texto e mídia, em ordem cronológica; fallback com clipboard negado e opção de atividade exercitados e restaurados. Tampermonkey Beta salvou 0.5.19 e uma carga limpa carregou a 0.5.19 com um painel. O conteúdo copiado não foi registrado aqui.
 - Nota: na primeira rodada a versão exportada em `window.__zapiaManager.version` ficou 0.5.18; corrigido antes do commit.
+
+## Filtros combinados com OU, 0.5.20, 2026-10-17
+
+- Relato do usuário (com print): com o filtro "sem prefixo" e `[nº]` ligados, o cabeçalho mostrava `0 of 92`; o esperado é ver os dois grupos.
+- Causa: `catalogueView` aplicava `onlyUnprefixed` depois dos filtros como um E, e chats numerados nunca são "sem prefixo", então a interseção era vazia.
+- Correção: "sem prefixo" passa a ser mais um critério do OU (qualquer filtro ativo ou sem prefixo, fixados sempre contam como sem prefixo). Com um só controle ativo o comportamento não mudou. `hideCompleted` continua valendo por cima.
+- Evidências: 45 testes Node passaram (novo caso de filtros combinados). Ao vivo: `[nº]` = 5, sem prefixo = 15, os dois = 20 (antes 0). Tampermonkey Beta salvou 0.5.20 e uma carga limpa carregou a 0.5.20 com um painel.
+- O problema do Enter foi descartado pelo usuário (resolvido do lado dele); não investigado.
