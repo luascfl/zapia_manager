@@ -2,11 +2,11 @@
 
 ## Active milestone
 
-Milestone 5, production English UI, non-blocking minimized panel, and inline catalogue search with clear button, completed in version 0.5.7.
+Milestone 5, production English UI, non-blocking minimized panel, inline catalogue search with clear button, and distraction-free row hover, completed in version 0.5.8.
 
 ## Active story
 
-US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; added inline catalogue search triggered by `🔍` which replaces filter chips with an inline text input, filters catalogue results live inside the Manager panel with case/accent insensitivity, transforms the button to `×` for instant query reset and closure; resolved visual spacing in header between title and loading/summary status; release version 0.5.7.
+US-008 completed: full English public UI localization (headers, settings dialog, filters, tooltips, batch actions, row menu, empty states, and errors); repaired minimized panel layout and wheel guard so native canvas navigation behind it remains completely accessible without blocking clicks or wheel events; added inline catalogue search triggered by `🔍` which replaces filter chips with an inline text input, filters catalogue results live inside the Manager panel with case/accent insensitivity, transforms the button to `×` for instant query reset and closure; resolved visual spacing in header between title and loading/summary status; removed distracting native browser `title` hover tooltips on chat row titles while preserving `aria-label`; release version 0.5.8.
 ## Initial decisions (historical)
 
 - Target LibreWolf, not Chromium, because Violentmonkey is the requested runtime.
@@ -20,12 +20,14 @@ US-008 completed: full English public UI localization (headers, settings dialog,
 - `graphify update .` rebuilt `.context/graphify-out` with 30 nodes and 56 edges.
 - LibreWolf 142.0.1 and an enabled Violentmonkey extension are present in the default profile.
 
-## Versão 0.5.7: Ajuste de espaçamento no cabeçalho e release consolidado
+## Versão 0.5.8: Remoção do tooltip nativo de hover nas linhas de chat
 
-- Adicionado espaçamento visual explícito (`gap: 6px` e nó de texto) entre o título `Chats` e o status/contador (`Loading…` ou contagem) no elemento `.zapia-manager-panel-heading-copy`, evitando aglutinação visual como `ChatsLoading…`.
-- Versão do userscript e export de runtime unificados em `0.5.7`.
+- Removido o atributo `title` ("Open [nome do chat]") nos botões das linhas de conversa (`.zapia-manager-chat-title`), eliminando o popup flutuante distrativo ao passar o mouse.
+- Mantido o `aria-label` nos botões para preservar acessibilidade por leitores de tela sem disparar hover visual do navegador.
+- Demais botões (engrenagem de preferências, minimizar/expandir, filtros, ações em lote e menu de opções da linha `⋯`) mantêm seus tooltips informativos inalterados.
+- Versão do userscript e export de runtime unificados em `0.5.8`.
 - 34 testes automatizados Node executados e aprovados.
-- Hot reload via CDP e smoke test autenticado no Zapia confirmaram espaçamento correto, busca inline e restauração íntegra.
+- Hot reload via CDP e inspeção no Chrome confirmaram ausência de atributo `title` nas linhas de chat e integridade dos demais controles.
 
 - Versão 0.5.2 removeu a barreira artificial de exclusão para chats de agentes/habilidades (prefix-1).
 - O menu contextual da linha (`⋯`) e a barra de ações em lote mantêm o botão "Excluir" habilitado para qualquer chat selecionado.

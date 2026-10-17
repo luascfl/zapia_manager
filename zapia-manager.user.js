@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.7
+// @version      0.5.8
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -2350,6 +2350,7 @@
         renderManagerPanel();
       });
       const open = button(chat.title, `Open ${chat.title}`, () => openCatalogueChat(chat.id));
+      open.removeAttribute('title');
       open.classList.add('zapia-manager-chat-title');
       open.disabled = busy;
       if (chat.id === activeCatalogueId) open.setAttribute('aria-current', 'page');
@@ -2627,7 +2628,7 @@
   }
 
   window.__zapiaManager = Object.freeze({
-    version: '0.5.7',
+    version: '0.5.8',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
