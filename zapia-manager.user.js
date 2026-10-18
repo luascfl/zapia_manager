@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.23
+// @version      0.5.24
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -85,6 +85,7 @@
   }
 
   const CHAT_HEADER_BOTTOM = 70;
+  const MINIMIZED_BAR_HEIGHT = 36;
 
   function isChatHeaderControl({ parentRole, rect, navRight }) {
     return parentRole !== 'group'
@@ -2792,8 +2793,13 @@
     const menuOverlaps = Boolean(bounds && action && rectanglesOverlap(bounds, action.getBoundingClientRect()));
     panel.classList.toggle('is-sidebar-hidden', !bounds || isRadarOverlayOpen() || nativeEntry || menuOverlaps);
     if (bounds) {
+      // Minimized, only the expand button remains: keep it on the profile bar's free right
+      // end instead of floating over native chat rows and their ⋮ actions.
+      const top = preferences.panel.minimized
+        ? viewport.bottom + Math.max(0, (innerHeight - viewport.bottom - MINIMIZED_BAR_HEIGHT) / 2)
+        : bounds.top;
       for (const [name, value] of Object.entries({
-        left: `${bounds.left}px`, top: `${bounds.top}px`,
+        left: `${bounds.left}px`, top: `${top}px`,
         width: `${bounds.width}px`, height: `${bounds.height}px`,
       })) {
         if (panel.style[name] !== value) panel.style[name] = value;
@@ -2895,6 +2901,7 @@
         font: 13px/1.35 Inter, system-ui, sans-serif; pointer-events: auto !important;
       }
       .zapia-manager-sidebar.is-sidebar-hidden { visibility: hidden; pointer-events: none !important; }
+      .zapia-manager-sidebar.is-minimized .zapia-manager-minimize-trigger { font-size: 20px; padding: 0 6px; color: #d5dbda; }
       .zapia-manager-sidebar.is-minimized { height: auto !important; overflow: visible; border: 0; background: transparent; pointer-events: none !important; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading { justify-content: flex-end; min-block-size: 28px; padding: 4px 12px; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading-copy,
@@ -3359,7 +3366,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.23',
+    version: '0.5.24',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
