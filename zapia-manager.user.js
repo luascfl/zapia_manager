@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.41
+// @version      0.5.42
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -422,6 +422,12 @@
       || message.startsWith('Zapia did not render chat ');
   }
 
+  // Deleting is only ever offered for a chat the server says does not exist (404). A chat that is
+  // merely slow to open, or whose state is unknown, gets a warning instead.
+  function shouldOfferChatDeletion(messagesStatus) {
+    return messagesStatus === 404;
+  }
+
   function pinnedBetweenSections(position, start, end) {
     return Number.isFinite(start) && Number.isFinite(end) && position >= start && position < end;
   }
@@ -759,6 +765,7 @@
     summarizeBatch,
     buildSupportDiagnosticPayload,
     isUnavailableChatError,
+    shouldOfferChatDeletion,
     selectedChats,
     assertChatTitle,
     isManagedNode,
@@ -1492,7 +1499,7 @@
       try {
         await waitFor(
           () => location.href !== before ? semanticMenuButton() : null,
-          'the selected chat to open', 3000,
+          'the selected chat to open', 8000,
         );
       } catch (error) {
         activeCatalogueId = previousActiveId;
@@ -2787,8 +2794,22 @@
       }, { refresh: false });
     } catch (error) {
       if (!isUnavailableChatError(error)) throw error;
+      const chat = knownChats.find((candidate) => candidate.id === id);
+      const threadId = chat?.threadId ?? (chat ? threadIdsForTitle(chat.title)[0] : null);
+      const status = threadId && apiSession ? await threadMessagesStatus(threadId).catch(() => null) : null;
+      if (!shouldOfferChatDeletion(status)) {
+        toast(`"${chat?.title ?? 'This chat'}" is taking long to load in Zapia. Wait a moment and try again.`, 'warning');
+        return;
+      }
       await promptUnavailableChatRecovery(id);
     }
+  }
+
+  async function threadMessagesStatus(threadId) {
+    const url = new URL(`/api/v1/threads/${encodeURI(threadId)}/messages`, apiSession.origin);
+    for (const [name, value] of Object.entries(apiSession.params)) url.searchParams.set(name, value);
+    url.searchParams.set('limit', '1');
+    return (await fetch(url, { signal: lifetime.signal })).status;
   }
 
   function protectManagedSurface(element) {
@@ -4051,7 +4072,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.41',
+    version: '0.5.42',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

@@ -742,3 +742,11 @@ test('a suggested title replaces the current one but keeps the managed emoji pre
   assert.equal(manager.withSuggestedTitle('✔ [4] Panorama', 'Novo título'), '✔ Novo título');
   assert.equal(manager.withSuggestedTitle('Panorama', '✔ Já com prefixo'), '✔ Já com prefixo');
 });
+
+test('deletion is offered only when the server answers 404 for the chat', () => {
+  assert.equal(manager.shouldOfferChatDeletion(404), true);
+  assert.equal(manager.shouldOfferChatDeletion(200), false);
+  assert.equal(manager.shouldOfferChatDeletion(null), false);
+  assert.equal(manager.shouldOfferChatDeletion(500), false);
+  assert.equal(manager.shouldOfferChatDeletion(undefined), false);
+});
