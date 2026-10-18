@@ -375,3 +375,11 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Execução real em chats frios (criados, título gerado, página recarregada): 9 de 9 apagados em 13,9 s (~1,5 s por chat), progresso 1/9 a 9/9, "Deleted 9 chats.", 0 erros, seleção zerada. Rodadas anteriores desta sessão: 6 de 6 em 12,7 s e 5 de 5 em 7,3 s (chats em cache). Servidor confirmado sem nenhum chat de teste.
 - Observação: disparar muitas navegações por `popstate` sem esperar deixa o app sem carregar os chats (falha só do teste de varredura, não do uso normal). A janela de títulos nulos (~8 a 15 s após criar) é curta demais para selecionar pela linha antiga.
 - Evidências: 56 testes Node passaram; Tampermonkey Beta com 0.5.37.
+
+## Renomeio e exclusão em lote verificados, 0.5.38, 2026-10-17
+
+- Pergunta do usuário: o apagamento e o renomeio de chats em lote estão funcionando? Exclusão já tinha sido exercitada (5, 6 e 9 chats); renomeio em lote não tinha sido rodado depois das mudanças da 0.5.36/0.5.37.
+- Teste de renomeio: 3 chats frios (página recarregada), `✔ Prefix` em lote: progresso 1/3 a 3/3, 8,8 s, aviso "Prefixed 3 chats.", e o servidor confirmou os três títulos com `✔ `. Em seguida exclusão em lote desses 3 (8,3 s, "Deleted 3 chats.").
+- Defeito achado: depois do lote, o painel ficava com uma linha a mais que o servidor (94 contra 93), porque a atualização imediata da lista pegava o servidor antes de refletir a remoção. 0.5.38: `refreshAfterAction` atualiza de novo 3 s depois.
+- Verificação da correção: 2 chats frios apagados em lote ("Deleted 2 chats."), e 6 s depois painel 93, servidor 93, nenhuma linha do painel ausente do servidor.
+- Evidências: 56 testes Node passaram; Tampermonkey Beta com 0.5.38. Os chats de teste foram todos apagados.

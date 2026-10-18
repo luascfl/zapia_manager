@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.37
+// @version      0.5.38
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -2929,13 +2929,18 @@
   // After an action the server list is the quick way to see new titles and removals; a full
   // sidebar scroll is only the fallback when no session has been captured yet.
   function refreshAfterAction() {
-    if (apiSession) {
+    if (!apiSession) {
+      scheduleChatRescan();
+      return;
+    }
+    const refresh = () => {
       chainAttempts = 0;
       lastThreadListRefresh = 0;
       void requestThreadChain();
-    } else {
-      scheduleChatRescan();
-    }
+    };
+    refresh();
+    // The server can still list a chat that was just deleted or renamed; ask again.
+    later(refresh, 3000);
   }
 
   async function rediscoverAndApply(id, prefix) {
@@ -3817,7 +3822,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.37',
+    version: '0.5.38',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
