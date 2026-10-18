@@ -719,3 +719,26 @@ test('chat id helpers read, set and find the [number] of a chat', () => {
   assert.equal(manager.latestChatIdMention(['nada', 'aqui']), null);
   assert.equal(manager.latestChatIdMention([]), null);
 });
+
+test('suggested chat titles are read from bold text introduced as a suggestion, newest message first', () => {
+  const msg30 = 'Atualizei esta tarefa para **[9]**. A habilidade passou na validação. O título sugerido para o chat é **[9] Seminário de cuidados paliativos | Psicologia e Saúde Coletiva**. Não renomeei a conversa.';
+  assert.equal(manager.suggestedTitleFromText(msg30), '[9] Seminário de cuidados paliativos | Psicologia e Saúde Coletiva');
+  const msg26 = 'Usei **[1]** e atualizei o título da tarefa: **[1] Psicologia e Saúde Coletiva: confirmar data**. [Abrir tarefa](https://x)\n\nTítulo sugerido para esta conversa: **[1] Seminário de cuidados paliativos | "Psicologia"**';
+  assert.equal(manager.suggestedTitleFromText(msg26), '[1] Seminário de cuidados paliativos | "Psicologia"');
+  // a bold task title that is not introduced as a suggestion is not a suggestion
+  assert.equal(manager.suggestedTitleFromText('Atualizei o título da tarefa: **[1] Qualquer coisa**.'), null);
+  assert.equal(manager.suggestedTitleFromText('Sugiro renomear para **Plano de estudos**.'), 'Plano de estudos');
+  assert.equal(manager.suggestedTitleFromText('Sem negrito: título sugerido [1] Algo'), null);
+  assert.equal(manager.latestTitleSuggestion([msg30, msg26]), '[9] Seminário de cuidados paliativos | Psicologia e Saúde Coletiva');
+  assert.equal(manager.latestTitleSuggestion(['nada aqui', msg26]), '[1] Seminário de cuidados paliativos | "Psicologia"');
+  assert.equal(manager.latestTitleSuggestion([]), null);
+});
+
+test('a suggested title replaces the current one but keeps the managed emoji prefix', () => {
+  assert.equal(manager.sameChatTitle('✔ Plano de estudos', 'Plano de estudos'), true);
+  assert.equal(manager.sameChatTitle('[1] Plano', '[2] Plano'), false);
+  assert.equal(manager.withSuggestedTitle('Panorama de cuidados', '[9] Seminário'), '[9] Seminário');
+  assert.equal(manager.withSuggestedTitle('🟡 Panorama', '[9] Seminário'), '🟡 [9] Seminário');
+  assert.equal(manager.withSuggestedTitle('✔ [4] Panorama', 'Novo título'), '✔ Novo título');
+  assert.equal(manager.withSuggestedTitle('Panorama', '✔ Já com prefixo'), '✔ Já com prefixo');
+});

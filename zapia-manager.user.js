@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.40
+// @version      0.5.41
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -192,6 +192,48 @@
       if (ids.length) return ids.at(-1)[1];
     }
     return null;
+  }
+
+  // A title the assistant proposes for the conversation, e.g.
+  //   Título sugerido para esta conversa: **[1] Seminário | Psicologia**
+  // The title is the bold text, and the words right before it must say it is a suggestion
+  // (not just any bold text, such as the title of a task that was updated).
+  function suggestedTitleFromText(text) {
+    const source = String(text ?? '');
+    let found = null;
+    for (const match of source.matchAll(/\*\*([^*\n]{3,200}?)\*\*/gu)) {
+      const before = source.slice(Math.max(0, match.index - 160), match.index);
+      const sentence = before.split(/\n|[.!?]\s/u).pop();
+      if (/(?:t[ií]tulo|nome|renomear)/iu.test(sentence) && /(?:sugeri|sugest|sugiro|recomend)/iu.test(sentence)) {
+        const raw = match[1].trim();
+        const wrapped = /^["“”'‘’][\s\S]*["“”'‘’]$/u.test(raw) && raw.length > 2 ? raw.slice(1, -1) : raw;
+        const title = wrapped.replace(/[.:;]+$/u, '').trim();
+        if (title.length >= 3) found = title;
+      }
+    }
+    return found;
+  }
+
+  // Texts newest first; the first one that suggests a title wins.
+  function latestTitleSuggestion(texts) {
+    for (const text of texts) {
+      const title = suggestedTitleFromText(text);
+      if (title) return title;
+    }
+    return null;
+  }
+
+  function sameChatTitle(current, suggested) {
+    const plain = (value) => normalizeEmoji(stripManagedPrefix(String(value ?? '').trimStart())).replace(/\s+/gu, ' ').trim();
+    return plain(current) === plain(suggested);
+  }
+
+  // The managed emoji prefix of the current title stays in front of the suggested title.
+  function withSuggestedTitle(current, suggested) {
+    if (stripManagedPrefix(suggested) !== suggested) return suggested.trim();
+    const trimmed = String(current ?? '').trimStart();
+    const lead = trimmed.slice(0, trimmed.length - stripManagedPrefix(trimmed).length);
+    return `${lead ? lead.replace(/\s*$/u, ' ') : ''}${suggested.trim()}`;
   }
 
   function normalizeEmoji(value) {
@@ -710,6 +752,10 @@
     chatIdFromTitle,
     withChatId,
     latestChatIdMention,
+    suggestedTitleFromText,
+    latestTitleSuggestion,
+    sameChatTitle,
+    withSuggestedTitle,
     summarizeBatch,
     buildSupportDiagnosticPayload,
     isUnavailableChatError,
@@ -1531,6 +1577,36 @@
   // The conversation is drawn on a canvas, so the number itself cannot be a link; the button
   // appears just above the composer, on the right edge of the message column.
   let chatIdButton = null;
+  let titleSuggestion = null;
+  let suggestionRequestKey = '';
+  let suggestionInFlight = false;
+
+  // Reads the latest assistant messages through the API, because it keeps the markdown that
+  // marks the suggested title and reaches messages that are scrolled out of view.
+  async function fetchRecentAssistantTexts(threadId) {
+    const url = new URL(`/api/v1/threads/${encodeURI(threadId)}/messages`, apiSession.origin);
+    for (const [name, value] of Object.entries(apiSession.params)) url.searchParams.set(name, value);
+    url.searchParams.set('limit', '12');
+    const response = await fetch(url, { signal: lifetime.signal });
+    if (!response.ok) throw new Error(`Zapia answered ${response.status}.`);
+    const body = await response.json();
+    return (body.messages ?? [])
+      .filter((message) => message.role === 'assistant' && message.message_type === 'TEXT' && typeof message.content === 'string')
+      .sort((a, b) => b.sequence - a.sequence)
+      .map((message) => message.content);
+  }
+
+  // One request per change of the visible messages; a failure waits for the next change.
+  function requestTitleSuggestion(route, signature) {
+    const key = `${route}|${signature}`;
+    if (key === suggestionRequestKey || suggestionInFlight || !apiSession || !route || !signature) return;
+    suggestionRequestKey = key;
+    suggestionInFlight = true;
+    fetchRecentAssistantTexts(route)
+      .then((texts) => { titleSuggestion = { route, title: latestTitleSuggestion(texts) }; })
+      .catch(() => {})
+      .finally(() => { suggestionInFlight = false; });
+  }
 
   function removeChatIdButton() {
     chatIdButton?.remove();
@@ -1555,11 +1631,23 @@
       .filter(({ node, rect }) => (node.getAttribute('aria-label') || node.textContent || '').trim().startsWith('Mensagem de Zapia')
         && rect.left >= navRight && rect.bottom > CHAT_HEADER_BOTTOM && rect.top < composerTop)
       .sort((a, b) => a.rect.top - b.rect.top);
-    const id = latestChatIdMention(messages.map(({ node }) => node.getAttribute('aria-label') || node.textContent || ''));
-    if (!id || chatIdFromTitle(title) === id) {
+    const labels = messages.map(({ node }) => node.getAttribute('aria-label') || node.textContent || '');
+    const id = latestChatIdMention(labels);
+    const route = new URL(location.href).searchParams.get('pulsusNumber');
+    requestTitleSuggestion(route, labels.map((label) => `${label.length}:${label.slice(-60)}`).join('|'));
+    const suggested = titleSuggestion?.route === route && titleSuggestion.title
+      && !sameChatTitle(title, titleSuggestion.title) ? titleSuggestion.title : null;
+    // A suggested title (applied or not) already settles the chat's id; falling back to the
+    // last `[number]` of the message would offer ids of other flows mentioned in passing.
+    const hasSuggestion = titleSuggestion?.route === route && Boolean(titleSuggestion.title);
+    // Until the lookup for this chat is done, an id from the visible text would just flicker.
+    const lookupDone = titleSuggestion?.route === route || !apiSession;
+    const idWanted = lookupDone && !hasSuggestion && id && chatIdFromTitle(title) !== id ? id : null;
+    if (!suggested && !idWanted) {
       removeChatIdButton();
       return;
     }
+    const action = suggested ? { kind: 'title', value: suggested } : { kind: 'id', value: idWanted };
     if (!chatIdButton) {
       chatIdButton = document.createElement('button');
       chatIdButton.type = 'button';
@@ -1568,22 +1656,28 @@
       protectManagedSurface(chatIdButton);
       chatIdButton.addEventListener('click', async (event) => {
         event.preventDefault();
-        const wanted = chatIdButton?.dataset.chatId;
-        if (!wanted) return;
+        const { kind, value } = chatIdButton?.dataset ?? {};
+        if (!value) return;
         try {
-          await runChatAction(() => applyRename(null, (current) => withChatId(current, wanted)));
+          await runChatAction(() => applyRename(null, (current) => (kind === 'title'
+            ? withSuggestedTitle(current, value)
+            : withChatId(current, value))));
         } catch (error) {
           toast(error.message, 'error');
         }
       });
       document.body.append(chatIdButton);
     }
-    chatIdButton.dataset.chatId = id;
+    chatIdButton.dataset.kind = action.kind;
+    chatIdButton.dataset.value = action.value;
     chatIdButton.disabled = chatActionDepth > 0;
-    const label = `Rename chat to [${id}]`;
+    const shown = action.value.length > 46 ? `${action.value.slice(0, 45)}…` : action.value;
+    const label = action.kind === 'title' ? `Rename chat to "${shown}"` : `Rename chat to [${action.value}]`;
     if (chatIdButton.textContent !== label) {
       chatIdButton.textContent = label;
-      chatIdButton.title = `Set the id of this chat to [${id}], keeping its emoji prefix`;
+      chatIdButton.title = action.kind === 'title'
+        ? `Use the title the assistant suggested: ${action.value}`
+        : `Set the id of this chat to [${action.value}], keeping its emoji prefix`;
     }
     const right = messages.length ? Math.max(...messages.map(({ rect }) => rect.right)) : window.innerWidth - 24;
     chatIdButton.style.right = `${Math.max(8, window.innerWidth - Math.min(right, window.innerWidth - 8))}px`;
@@ -3957,7 +4051,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.40',
+    version: '0.5.41',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
