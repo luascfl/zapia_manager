@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.31
+// @version      0.5.32
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -666,6 +666,7 @@
     formatChatContext,
     matchKey,
     titleFromCacheText,
+    reconcileChatList,
     buildSupportDiagnosticPayload,
     isUnavailableChatError,
     selectedChats,
@@ -3128,6 +3129,7 @@
         threads: received.map((thread) => ({
           id: thread.id,
           label: typeof thread.label === 'string' ? thread.label : '',
+          pinned: (body.threads_pinned ?? []).some((pinned) => pinned?.id === thread.id),
         })),
       });
       titleIndexCache = null;
@@ -3176,13 +3178,73 @@
     return false;
   }
 
-  // A chat created a moment ago is not in the thread list we observed yet. Asking for the
-  // first page lets the observer learn its title, so its spinner can be shown.
-  async function fetchFirstThreadsPage() {
-    const url = new URL('/api/v1/threads', apiSession.origin);
-    for (const [name, value] of Object.entries(apiSession.params)) url.searchParams.set(name, value);
-    url.searchParams.set('limit', '50');
-    await fetch(url, { signal: lifetime.signal });
+  // Follows the paginated thread list from the first page to its end. Our own requests go
+  // through the observer like Zapia's, so the observed page chain becomes complete.
+  async function fetchThreadChain() {
+    let before = null;
+    for (let page = 0; page < 20; page += 1) {
+      const url = new URL('/api/v1/threads', apiSession.origin);
+      for (const [name, value] of Object.entries(apiSession.params)) url.searchParams.set(name, value);
+      url.searchParams.set('limit', '50');
+      if (before) url.searchParams.set('before', before);
+      const response = await fetch(url, { signal: lifetime.signal });
+      if (!response.ok) return;
+      const body = await response.json();
+      if (!body.has_more || !body.next_cursor) return;
+      before = body.next_cursor;
+    }
+  }
+
+  let chainAttempts = 0;
+
+  // At most three tries in a row, so a list that never completes cannot cause endless polling.
+  function requestThreadChain() {
+    if (lifetime.signal.aborted || !apiSession || chainAttempts >= 3
+      || Date.now() - lastThreadListRefresh <= 5000) return Promise.resolve();
+    chainAttempts += 1;
+    lastThreadListRefresh = Date.now();
+    return fetchThreadChain().catch(() => {});
+  }
+
+  const retainedTitles = new Set();
+
+  // The server list is the truth for which chats exist and what they are called. A chat that
+  // was just created or renamed (Zapia names it after its first message) would otherwise
+  // keep its old title in the panel next to the new one until the next full sidebar scan.
+  // Server threads in list order -> catalogue entries. Existing entries are reused by title so
+  // their identity is stable; new or renamed chats get an entry named after the server label.
+  function reconcileChatList(chats, serverThreads) {
+    const existing = new Map(chats.map((chat) => [matchKey(chat.title), chat]));
+    const used = new Set();
+    const next = [];
+    for (const thread of serverThreads) {
+      if (!thread.label) continue;
+      const key = matchKey(thread.label);
+      if (used.has(key)) continue;
+      used.add(key);
+      const chat = existing.get(key);
+      next.push(chat
+        ? (chat.pinned === thread.pinned ? chat : { ...chat, pinned: thread.pinned })
+        : { id: `text:${thread.label}`, title: thread.label, pinned: thread.pinned });
+    }
+    const dropped = chats.filter((chat) => !used.has(matchKey(chat.title)));
+    return { next, dropped };
+  }
+
+  function reconcileCatalogue() {
+    if (chatScanRunning || chatActionDepth > 0 || !knownChats.length) return;
+    const server = threadListFromPages([...threadPages.values()]);
+    if (!server) return;
+    chainAttempts = 0;
+
+    const { next, dropped } = reconcileChatList(knownChats, server.values());
+    const signature = (list) => list.map((chat) => `${chat.id}|${chat.pinned}`).join('\n');
+    if (!next.length || signature(next) === signature(knownChats)) return;
+
+    for (const chat of dropped) retainedTitles.add(chat.title);
+    setKnownChats(next);
+    pruneSelection();
+    if (activeCatalogueId && !next.some((chat) => chat.id === activeCatalogueId)) activeCatalogueId = null;
   }
 
   async function refreshPendingReplies() {
@@ -3196,14 +3258,8 @@
       }
       return;
     }
-    if (
-      !lifetime.signal.aborted
-      && apiSession
-      && Date.now() - lastThreadListRefresh > 5000
-      && [...next].some((id) => !isKnownThreadId(id))
-    ) {
-      lastThreadListRefresh = Date.now();
-      fetchFirstThreadsPage().catch(() => {});
+    if (!lifetime.signal.aborted && [...next].some((id) => !isKnownThreadId(id))) {
+      void requestThreadChain();
     }
     if (lifetime.signal.aborted || [...next].sort().join(',') === pendingSignature()) return;
     pendingThreadIds = next;
@@ -3279,12 +3335,16 @@
     staleCheckScheduled = true;
     later(() => {
       staleCheckScheduled = false;
-      refreshStaleThreads()
+      const incomplete = !threadListFromPages([...threadPages.values()]);
+      (incomplete ? requestThreadChain() : Promise.resolve())
+        .then(() => refreshStaleThreads())
         .catch((error) => {
           console.warn('[Zapia Manager] stale chat check failed:', error);
         })
         .finally(() => {
-          if (knownChats.length && !lifetime.signal.aborted) renderManagerPanel();
+          if (lifetime.signal.aborted) return;
+          reconcileCatalogue();
+          if (knownChats.length) renderManagerPanel();
         });
     }, 1000);
   }
@@ -3355,7 +3415,7 @@
     const db = await openThreadCache();
     try {
       const store = db.transaction(THREAD_CACHE_STORE, 'readonly').objectStore(THREAD_CACHE_STORE);
-      const known = knownChats.map((chat) => chat.title);
+      const known = [...knownChats.map((chat) => chat.title), ...retainedTitles];
       const decoder = new TextDecoder('utf-8');
       const found = [];
       for (const id of ids) {
@@ -3554,7 +3614,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.31',
+    version: '0.5.32',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

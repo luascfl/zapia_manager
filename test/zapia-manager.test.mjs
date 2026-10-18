@@ -624,3 +624,25 @@ test('titleFromCacheText picks the longest known title found in a cache record',
   assert.equal(manager.titleFromCacheText('nothing here', titles), null);
   assert.equal(manager.titleFromCacheText('anything', []), null);
 });
+
+test('reconcileChatList follows the server list: renames, new chats, pins and removals', () => {
+  const chats = [
+    { id: 'text:Alpha', title: 'Alpha', pinned: false },
+    { id: 'text:testsetestse', title: 'testsetestse', pinned: false },
+    { id: 'text:Gone', title: 'Gone', pinned: false },
+  ];
+  const server = [
+    { id: 'a', label: 'Brand new chat', pinned: false },
+    { id: 'b', label: 'Teste de mensagem', pinned: false },
+    { id: 'c', label: 'Alpha', pinned: true },
+  ];
+  const { next, dropped } = manager.reconcileChatList(chats, server);
+
+  assert.deepEqual(next.map((chat) => chat.title), ['Brand new chat', 'Teste de mensagem', 'Alpha']);
+  assert.deepEqual(next.map((chat) => chat.id), ['text:Brand new chat', 'text:Teste de mensagem', 'text:Alpha']);
+  assert.equal(next[2].pinned, true);
+  assert.deepEqual(dropped.map((chat) => chat.title), ['testsetestse', 'Gone']);
+  const same = manager.reconcileChatList([chats[0]], [{ id: 'c', label: 'Alpha', pinned: false }]);
+  assert.equal(same.next[0], chats[0]);
+  assert.equal(manager.reconcileChatList([], [{ id: '1', label: 'X', pinned: false }, { id: '2', label: 'X', pinned: false }]).next.length, 1);
+});
