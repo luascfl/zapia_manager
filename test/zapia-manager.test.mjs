@@ -585,3 +585,16 @@ test('the unread filter narrows the result and overrides hideCompleted for unrea
   assert.deepEqual(ids(['numbered']), ['a']);
   assert.deepEqual(ids([]), ['a', 'b', 'd']);
 });
+
+test('mergeUnreadCounts zeroes absent threads only for a complete unread list and keeps the open chat read', () => {
+  const current = new Map([['a', 2], ['b', 1], ['c', 0]]);
+
+  // A regular page only updates the threads it contains.
+  assert.deepEqual([...manager.mergeUnreadCounts(current, [{ id: 'a', unread: 3 }])], [['a', 3], ['b', 1], ['c', 0]]);
+  // A complete has_unread list means every other thread is read.
+  assert.deepEqual([...manager.mergeUnreadCounts(current, [{ id: 'b', unread: 4 }], { complete: true })], [['a', 0], ['b', 4], ['c', 0]]);
+  // The open chat is read even if the server still reports unread messages.
+  assert.deepEqual([...manager.mergeUnreadCounts(current, [{ id: 'a', unread: 5 }], { openId: 'a' })], [['a', 0], ['b', 1], ['c', 0]]);
+  // The input is never mutated.
+  assert.equal(current.get('a'), 2);
+});

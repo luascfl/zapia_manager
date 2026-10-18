@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.25
+// @version      0.5.26
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -656,6 +656,7 @@
     excludeHiddenChats,
     threadListFromPages,
     findStaleThreadIds,
+    mergeUnreadCounts,
     mergeMessagePages,
     formatChatContext,
     matchKey,
@@ -2983,10 +2984,33 @@
   const THREAD_CACHE_STORE = 'box';
   const STALE_BACKUP_KEY = 'zapia_manager_stale_thread_backup_v1';
   const threadPages = new Map();
-  const unreadByThreadId = new Map();
+  let unreadByThreadId = new Map();
   let titleIndexCache = null;
   let staleThreadIds = [];
   let staleCheckScheduled = false;
+  let routeThreadId = null;
+
+  // received: [{ id, unread }]. A complete has_unread=true list names every unread
+  // thread, so anything absent from it is read. The chat that is open counts as read.
+  function mergeUnreadCounts(current, received, { complete = false, openId = null } = {}) {
+    const next = new Map(current);
+    if (complete) {
+      for (const id of next.keys()) next.set(id, 0);
+    }
+    for (const { id, unread } of received) next.set(id, unread);
+    if (openId && next.has(openId)) next.set(openId, 0);
+    return next;
+  }
+
+  function syncOpenThreadRead() {
+    const id = new URL(location.href).searchParams.get('pulsusNumber');
+    if (!id || id === routeThreadId) return;
+    routeThreadId = id;
+    if ((unreadByThreadId.get(id) ?? 0) > 0) {
+      unreadByThreadId = mergeUnreadCounts(unreadByThreadId, [], { openId: id });
+      renderManagerPanel();
+    }
+  }
   const SESSION_PARAMS = ['contact_number', 'device_id', 'user_email', 'auth_token'];
   let apiSession = null;
   let copyProgress = '';
@@ -3030,9 +3054,17 @@
     if (!body || !Array.isArray(body.threads)) return;
     const received = [...(body.threads_pinned ?? []), ...body.threads]
       .filter((thread) => typeof thread?.id === 'string');
-    for (const thread of received) {
-      unreadByThreadId.set(thread.id, Number.isFinite(thread.unread_count) ? thread.unread_count : 0);
-    }
+    unreadByThreadId = mergeUnreadCounts(
+      unreadByThreadId,
+      received.map((thread) => ({
+        id: thread.id,
+        unread: Number.isFinite(thread.unread_count) ? thread.unread_count : 0,
+      })),
+      {
+        complete: request.unreadOnly && body.has_more !== true,
+        openId: new URL(location.href).searchParams.get('pulsusNumber'),
+      },
+    );
     if (!request.unreadOnly) {
       threadPages.set(request.before, {
         before: request.before,
@@ -3355,13 +3387,14 @@
   }
 
   function syncLoop() {
+    syncOpenThreadRead();
     if (!hasFocusedTextEntry() && !isRadarOverlayOpen()) mountControls();
     else syncNativeSidebarLayout();
 
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.25',
+    version: '0.5.26',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

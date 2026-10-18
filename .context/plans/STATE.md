@@ -300,3 +300,11 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Correção 0.5.25: cabeçalho com a mesma geometria nos dois estados (`padding: 2px 22px 14px 12px`, `min-block-size: 32px`, o minimizado só muda `justify-content`), borda direita de 1 px mantida (transparente) no minimizado, botão fixo de 24×24 px com glifo centralizado. Alvo medido: centro (245; 304) contra o chevron nativo em (245; 323). O ⚙ manteve o preenchimento anterior.
 - Evidências: cinco estados medidos com cliques reais num único ponto fixo (244,7; 304): retângulo idêntico (232,7; 292; 24×24) em minimizado e expandido, alternando a cada clique e terminando minimizado como o usuário deixou; captura mostra o `+` na mesma coluna do chevron. 48 testes Node passaram. Tampermonkey Beta salvou 0.5.25 e carga limpa carregou 0.5.25 minimizado com um painel. Capturas temporárias removidas.
 - Efeito colateral aceito: o título "Chats" do cabeçalho expandido subiu ~8 px para alinhar com o botão; a altura total do cabeçalho não mudou.
+
+## Contador de não lidas não zerava ao abrir o chat, 0.5.26, 2026-10-17
+
+- Relato do usuário (com print): clicou num chat e a pílula de não lidas continuou no painel.
+- Causa: os contadores só mudavam quando o Zapia rebuscava `/api/v1/threads`; abrir o chat não gera essa rebusca na hora. Depois de recarregar, o servidor já mostrava o chat como lido (o chat do print sumiu), então só o painel estava defasado.
+- Correção 0.5.26: `mergeUnreadCounts` (pura) aplica as regras: página comum atualiza só os chats que traz; lista `has_unread=true` completa (`has_more` falso) zera quem não está nela; o chat da rota atual (`pulsusNumber`) conta como lido. `syncOpenThreadRead` roda no `syncLoop` (500 ms) e zera a pílula ao mudar de chat.
+- Evidências: 49 testes Node passaram (novo teste de `mergeUnreadCounts`, sem mutar a entrada). Carga limpa: 4 pílulas iguais às nativas (3, 2, 2, 1). Abrir pelo painel o chat com 1 não lida: pílula nula em 500 ms, as outras (3, 2, 2) intactas. Tampermonkey Beta salvou 0.5.26; painel devolvido a minimizado. Efeito colateral do teste: esse chat passou a lido no Zapia do usuário.
+- Limite: chats que recebem mensagem nova depois de carregados só ganham pílula quando o app rebuscar a lista (o app o faz por conta própria); polling próprio não foi implementado.
