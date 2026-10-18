@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.22
+// @version      0.5.23
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -204,20 +204,23 @@
   function catalogueView(chats, filters, prefixes, view) {
     const groups = [[], [], [], []];
     const promoted = !view.onlyUnprefixed && (view.prioritizeAgents || view.prioritizeIds);
-    // Filters and "only unprefixed" are alternatives: a chat shows if it matches any active one.
-    const byFilter = new Set(filterChats(chats, filters, prefixes));
+    // "unread" narrows whatever else is shown; the other filters are alternatives to one another.
+    const unreadOnly = filters.has('unread');
+    const typeFilters = new Set([...filters].filter((filter) => filter !== 'unread'));
+    const byFilter = new Set(filterChats(chats, typeFilters, prefixes));
     for (const chat of chats) {
       const completed = chatMatchesFilter(chat.title, 'prefix-0', prefixes);
       const agent = chatMatchesFilter(chat.title, 'prefix-1', prefixes);
       const numbered = chatMatchesFilter(chat.title, 'numbered', prefixes);
       const unprefixed = chat.pinned || !(completed || agent || numbered);
-      if (filters.size || view.onlyUnprefixed) {
-        const shown = (filters.size > 0 && byFilter.has(chat))
+      if (typeFilters.size || view.onlyUnprefixed) {
+        const shown = (typeFilters.size > 0 && byFilter.has(chat))
           || (view.onlyUnprefixed && unprefixed);
         if (!shown) continue;
       }
-      // Asking for completed chats explicitly beats the option that hides them.
-      if (view.hideCompleted && completed && !filters.has('prefix-0')) continue;
+      if (unreadOnly && !(chat.unread > 0)) continue;
+      // Asking explicitly for completed or unread chats beats the option that hides completed ones.
+      if (view.hideCompleted && completed && !typeFilters.has('prefix-0') && !unreadOnly) continue;
       const rank = !promoted ? 0 : chat.pinned ? 0
         : view.prioritizeAgents && agent ? 1
           : view.prioritizeIds && numbered && !completed ? 2 : 3;
@@ -233,7 +236,7 @@
 
   const SPECIAL_THREAD_KEY = /^ape@(?:home|notifications)_/u;
   const THREAD_LIST_PARAMS = new Set([
-    'limit', 'before', 'contact_number', 'device_id', 'user_email', 'auth_token',
+    'limit', 'before', 'has_unread', 'contact_number', 'device_id', 'user_email', 'auth_token',
   ]);
 
   function matchKey(text) {
@@ -2008,7 +2011,8 @@
   }
 
   function filteredChats() {
-    const visibleKnownChats = excludeHiddenChats(knownChats, preferences.hiddenChats);
+    const visibleKnownChats = excludeHiddenChats(knownChats, preferences.hiddenChats)
+      .map((chat) => ({ ...chat, unread: unreadCountForTitle(chat.title) }));
     return filterChatsByQuery(
       catalogueView(visibleKnownChats, activeFilters, preferences.prefixes, preferences.view),
       catalogueSearchQuery,
@@ -2531,6 +2535,7 @@
       [...selectedChatIds].join('\u0001'),
       staleThreadIds.join(','),
       copyProgress,
+      unreadSignature(),
     ].join('|');
     if (panel.dataset.zapiaManagerState === state) return;
     const previousScroll = panel.querySelector('.zapia-manager-chat-list')?.scrollTop
@@ -2615,9 +2620,11 @@
         ['numbered', '[nº]', 'Show chats with a numeric [id]'],
         ['prefix-0', preferences.prefixes[0], 'Show chats with the first emoji'],
         ['prefix-1', preferences.prefixes[1], 'Show chats with the second emoji'],
+        ['unread', '●', 'Show only chats with unread messages'],
       ]) {
         const chip = button(label, hint, () => toggleFilter(key));
         chip.classList.add('zapia-manager-filter');
+        if (key === 'unread') chip.classList.add('zapia-manager-unread-filter');
         chip.classList.toggle('is-active', activeFilters.has(key));
         chip.setAttribute('aria-pressed', String(activeFilters.has(key)));
         filters.append(chip);
@@ -2694,7 +2701,15 @@
       const menu = button('⋯', `More actions for ${chat.title}`, () => openRowMenu(menu, chat));
       menu.classList.add('zapia-manager-chat-menu');
       menu.disabled = busy;
-      option.append(select, open, menu);
+      option.append(select, open);
+      if (chat.unread > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'zapia-manager-unread';
+        badge.textContent = chat.unread > 99 ? '99+' : String(chat.unread);
+        badge.setAttribute('aria-label', `${chat.unread} unread message${chat.unread === 1 ? '' : 's'}`);
+        option.append(badge);
+      }
+      option.append(menu);
       list.append(option);
     }
     panel.append(list);
@@ -2914,6 +2929,8 @@
       .zapia-manager-chat-option input { flex: 0 0 auto; inline-size: 14px; block-size: 14px; margin: 0; accent-color: #32bfa6; }
       .zapia-manager-chat-title { flex: 1 1 auto; min-inline-size: 0; text-align: left; border: 0; padding: 8px 0; overflow-wrap: anywhere; user-select: text; font-size: 12px; line-height: 1.4; }
       .zapia-manager-chat-title:hover:not(:disabled) { background: transparent; }
+      .zapia-manager-unread { flex: 0 0 auto; min-inline-size: 18px; padding: 0 6px; border-radius: 9px; background: #1f8f7a; color: #e9fffa; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; box-sizing: border-box; }
+      .zapia-manager-unread-filter { color: #2fb59b; }
       .zapia-manager-chat-menu { flex: 0 0 auto; border: 0; padding: 0 2px; min-inline-size: 20px; opacity: 0; }
       .zapia-manager-chat-option:hover .zapia-manager-chat-menu, .zapia-manager-chat-option:focus-within .zapia-manager-chat-menu { opacity: 1; }
       .zapia-manager-row-menu {
@@ -2964,6 +2981,8 @@
   const THREAD_CACHE_STORE = 'box';
   const STALE_BACKUP_KEY = 'zapia_manager_stale_thread_backup_v1';
   const threadPages = new Map();
+  const unreadByThreadId = new Map();
+  let titleIndexCache = null;
   let staleThreadIds = [];
   let staleCheckScheduled = false;
   const SESSION_PARAMS = ['contact_number', 'device_id', 'user_email', 'auth_token'];
@@ -2999,21 +3018,37 @@
     for (const name of url.searchParams.keys()) {
       if (!THREAD_LIST_PARAMS.has(name)) return null;
     }
-    return { before: url.searchParams.get('before') };
+    // The has_unread=true list is a subset: it refreshes unread counts, never the page chain.
+    const unreadFlag = url.searchParams.get('has_unread');
+    if (unreadFlag !== null && unreadFlag !== 'true') return null;
+    return { before: url.searchParams.get('before'), unreadOnly: unreadFlag === 'true' };
   }
 
   function recordThreadsPage(request, body) {
     if (!body || !Array.isArray(body.threads)) return;
-    const threads = [...(body.threads_pinned ?? []), ...body.threads]
-      .filter((thread) => typeof thread?.id === 'string')
-      .map((thread) => ({ id: thread.id, label: typeof thread.label === 'string' ? thread.label : '' }));
-    threadPages.set(request.before, {
-      before: request.before,
-      nextCursor: body.next_cursor ?? null,
-      hasMore: body.has_more === true,
-      threads,
-    });
+    const received = [...(body.threads_pinned ?? []), ...body.threads]
+      .filter((thread) => typeof thread?.id === 'string');
+    for (const thread of received) {
+      unreadByThreadId.set(thread.id, Number.isFinite(thread.unread_count) ? thread.unread_count : 0);
+    }
+    if (!request.unreadOnly) {
+      threadPages.set(request.before, {
+        before: request.before,
+        nextCursor: body.next_cursor ?? null,
+        hasMore: body.has_more === true,
+        threads: received.map((thread) => ({
+          id: thread.id,
+          label: typeof thread.label === 'string' ? thread.label : '',
+        })),
+      });
+      titleIndexCache = null;
+    }
     scheduleStaleCheck();
+  }
+
+  function unreadSignature() {
+    return [...unreadByThreadId].filter(([, count]) => count > 0)
+      .map(([id, count]) => `${id}:${count}`).join(',');
   }
 
   // Observation only: Zapia receives the original promise untouched, and our
@@ -3080,9 +3115,13 @@
     staleCheckScheduled = true;
     later(() => {
       staleCheckScheduled = false;
-      refreshStaleThreads().catch((error) => {
-        console.warn('[Zapia Manager] stale chat check failed:', error);
-      });
+      refreshStaleThreads()
+        .catch((error) => {
+          console.warn('[Zapia Manager] stale chat check failed:', error);
+        })
+        .finally(() => {
+          if (knownChats.length && !lifetime.signal.aborted) renderManagerPanel();
+        });
     }, 1000);
   }
 
@@ -3161,16 +3200,36 @@
     window.location.reload();
   }
 
+  function titleIndex() {
+    if (titleIndexCache) return titleIndexCache;
+    const exact = new Map();
+    const bare = new Map();
+    const add = (map, key, id) => {
+      const ids = map.get(key);
+      if (!ids) map.set(key, [id]);
+      else if (!ids.includes(id)) ids.push(id);
+    };
+    for (const page of threadPages.values()) {
+      for (const thread of page.threads) {
+        add(exact, matchKey(thread.label), thread.id);
+        add(bare, matchKey(stripManagedPrefix(thread.label)), thread.id);
+      }
+    }
+    titleIndexCache = { exact, bare };
+    return titleIndexCache;
+  }
+
   function threadIdsForTitle(title) {
-    const threads = [...threadPages.values()].flatMap((page) => page.threads);
-    const idsWhere = (test) => [...new Set(threads.filter(test).map((thread) => thread.id))];
-    const exact = matchKey(title);
-    const exactIds = idsWhere((thread) => matchKey(thread.label) === exact);
-    if (exactIds.length) return exactIds;
+    const index = titleIndex();
+    const exactIds = index.exact.get(matchKey(title));
+    if (exactIds) return exactIds;
     // A prefix applied here is not in the observed server label until Zapia reloads it.
-    const bare = matchKey(stripManagedPrefix(title));
-    const bareIds = idsWhere((thread) => matchKey(stripManagedPrefix(thread.label)) === bare);
-    return bareIds.length === 1 ? bareIds : [];
+    const bareIds = index.bare.get(matchKey(stripManagedPrefix(title)));
+    return bareIds?.length === 1 ? bareIds : [];
+  }
+
+  function unreadCountForTitle(title) {
+    return threadIdsForTitle(title).reduce((sum, id) => sum + (unreadByThreadId.get(id) ?? 0), 0);
   }
 
   async function fetchThreadMessages(threadId) {
@@ -3300,7 +3359,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.22',
+    version: '0.5.23',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

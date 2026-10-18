@@ -568,3 +568,20 @@ test('isChatBodyPoint covers only the conversation body, not the sidebar, header
   assert.equal(manager.isChatBodyPoint({ clientX: 600, clientY: 700, ...area }), false); // composer
   assert.equal(manager.isChatBodyPoint({ clientX: 0, clientY: 0, ...area }), false); // keyboard activation
 });
+
+test('the unread filter narrows the result and overrides hideCompleted for unread chats', () => {
+  const chats = [
+    { id: 'a', title: '[4] Numbered', pinned: false, unread: 2 },
+    { id: 'b', title: 'Plain', pinned: false, unread: 0 },
+    { id: 'c', title: '✔ Done', pinned: false, unread: 3 },
+    { id: 'd', title: 'Other', pinned: false, unread: 1 },
+  ];
+  const view = { prioritizeAgents: false, prioritizeIds: false, hideCompleted: true, onlyUnprefixed: false };
+  const ids = (filters, v = view) => manager.catalogueView(chats, new Set(filters), prefixes, v).map((chat) => chat.id);
+
+  assert.deepEqual(ids(['unread']), ['a', 'c', 'd']);
+  // It combines with the other filters as a restriction, not as another alternative.
+  assert.deepEqual(ids(['unread', 'numbered']), ['a']);
+  assert.deepEqual(ids(['numbered']), ['a']);
+  assert.deepEqual(ids([]), ['a', 'b', 'd']);
+});
