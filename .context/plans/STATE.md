@@ -383,3 +383,12 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Defeito achado: depois do lote, o painel ficava com uma linha a mais que o servidor (94 contra 93), porque a atualização imediata da lista pegava o servidor antes de refletir a remoção. 0.5.38: `refreshAfterAction` atualiza de novo 3 s depois.
 - Verificação da correção: 2 chats frios apagados em lote ("Deleted 2 chats."), e 6 s depois painel 93, servidor 93, nenhuma linha do painel ausente do servidor.
 - Evidências: 56 testes Node passaram; Tampermonkey Beta com 0.5.38. Os chats de teste foram todos apagados.
+
+## Chats com o mesmo título, uma linha por chat, 0.5.39, 2026-10-17
+
+- Pedido do usuário: corrigir o agrupamento de chats com títulos iguais numa só linha (apagar ou renomear exigia repetir a ação).
+- Mudança: `reconcileChatList` passou a gerar uma entrada por thread do servidor, com `threadId` e `duplicate`. O primeiro chat de um título mantém o id `text:<título>`; os seguintes ganham `#2`, `#3`. As ações em lote, o contador de não lidas, o spinner de resposta e "Copy context" usam o `threadId` da entrada. `mergeChatList` preserva o `threadId` ao mesclar linhas da barra nativa. `navigateToThread` agora exige que a rota seja exatamente o thread pedido e, para duplicatas, espera 700 ms e reconfirma (o cabeçalho do chat anterior pode permanecer um instante, idêntico ao do gêmeo).
+- Segurança: linhas da barra nativa não distinguem chats gêmeos, então para entradas duplicadas o caminho de reserva pela barra foi desativado; se a rota direta falhar, a ação falha com mensagem em vez de adivinhar e agir no chat errado.
+- Teste real: duas conversas com a mesma pergunta geraram dois chats "Capital da França". O painel mostrou duas linhas (`text:Capital da França` e `...#2`, cada uma com seu `threadId`), também depois de recarregar. Selecionando só a segunda e apagando, o servidor ficou com exatamente a primeira (`09dfbe0f`) e o painel passou a mostrar uma linha sem marca de duplicata. Depois apaguei a que sobrou; os chats de teste foram removidos.
+- Evidências: 56 testes Node passaram (teste de `reconcileChatList` reescrito para o novo contrato: ids, `threadId`, flag de duplicata, reaproveitamento e promoção ao apagar o primeiro). Tampermonkey Beta com 0.5.39.
+- Limites: o teste cobriu exclusão de gêmeos e não renomeio de gêmeos (mesmo caminho de navegação). Chats antigos sem entrada na lista do servidor ainda usam a identidade por título vinda da barra nativa.

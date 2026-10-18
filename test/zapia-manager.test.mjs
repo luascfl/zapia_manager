@@ -625,7 +625,7 @@ test('titleFromCacheText picks the longest known title found in a cache record',
   assert.equal(manager.titleFromCacheText('anything', []), null);
 });
 
-test('reconcileChatList follows the server list: renames, new chats, pins and removals', () => {
+test('reconcileChatList gives every server thread its own entry and keeps same-titled chats apart', () => {
   const chats = [
     { id: 'text:Alpha', title: 'Alpha', pinned: false },
     { id: 'text:testsetestse', title: 'testsetestse', pinned: false },
@@ -640,11 +640,31 @@ test('reconcileChatList follows the server list: renames, new chats, pins and re
 
   assert.deepEqual(next.map((chat) => chat.title), ['Brand new chat', 'Teste de mensagem', 'Alpha']);
   assert.deepEqual(next.map((chat) => chat.id), ['text:Brand new chat', 'text:Teste de mensagem', 'text:Alpha']);
+  assert.deepEqual(next.map((chat) => chat.threadId), ['a', 'b', 'c']);
   assert.equal(next[2].pinned, true);
   assert.deepEqual(dropped.map((chat) => chat.title), ['testsetestse', 'Gone']);
-  const same = manager.reconcileChatList([chats[0]], [{ id: 'c', label: 'Alpha', pinned: false }]);
-  assert.equal(same.next[0], chats[0]);
-  assert.equal(manager.reconcileChatList([], [{ id: '1', label: 'X', pinned: false }, { id: '2', label: 'X', pinned: false }]).next.length, 1);
+
+  // same title twice: two entries, distinct ids, both flagged, each with its own thread id
+  const twins = manager.reconcileChatList([], [
+    { id: '1', label: 'X', pinned: false },
+    { id: '2', label: 'X', pinned: false },
+    { id: '3', label: 'Y', pinned: false },
+  ]).next;
+  assert.deepEqual(twins.map((chat) => chat.id), ['text:X', 'text:X#2', 'text:Y']);
+  assert.deepEqual(twins.map((chat) => chat.threadId), ['1', '2', '3']);
+  assert.deepEqual(twins.map((chat) => chat.duplicate), [true, true, false]);
+
+  // an up-to-date entry is reused as is
+  const same = manager.reconcileChatList(twins, [
+    { id: '1', label: 'X', pinned: false },
+    { id: '2', label: 'X', pinned: false },
+    { id: '3', label: 'Y', pinned: false },
+  ]);
+  assert.equal(same.next[0], twins[0]);
+  assert.deepEqual(same.dropped, []);
+  // deleting the first twin promotes the second to the plain id and clears the flag
+  const after = manager.reconcileChatList(twins, [{ id: '2', label: 'X', pinned: false }, { id: '3', label: 'Y', pinned: false }]);
+  assert.deepEqual(after.next.map((chat) => [chat.id, chat.threadId, chat.duplicate]), [['text:X', '2', false], ['text:Y', '3', false]]);
 });
 
 test('mergeChatList never places a new unpinned chat inside the pinned block', () => {

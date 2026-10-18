@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.38
+// @version      0.5.39
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -370,7 +370,8 @@
       const at = result.findIndex(({ id }) => id === chat.id);
 
       if (at >= 0) {
-        result[at] = chat;
+        // Keep what only the server list knows (thread id), refresh what the sidebar shows.
+        result[at] = { ...result[at], ...chat };
         anchor = at;
         continue;
       }
@@ -2072,8 +2073,8 @@
     const visibleKnownChats = excludeHiddenChats(knownChats, preferences.hiddenChats)
       .map((chat) => ({
         ...chat,
-        unread: unreadCountForTitle(chat.title),
-        pending: isReplyPendingForTitle(chat.title),
+        unread: chat.threadId ? (unreadByThreadId.get(chat.threadId) ?? 0) : unreadCountForTitle(chat.title),
+        pending: chat.threadId ? pendingThreadIds.has(chat.threadId) : isReplyPendingForTitle(chat.title),
       }));
     return filterChatsByQuery(
       catalogueView(visibleKnownChats, activeFilters, preferences.prefixes, preferences.view),
@@ -2894,7 +2895,7 @@
   // which scrolls the list from the top for every chat. The header must show the chat's
   // title before anything runs; otherwise the sidebar path is used. Returns the row to act
   // on, or null when the chat is already open.
-  async function navigateToThread(threadId, title) {
+  async function navigateToThread(threadId, title, { settle = 0 } = {}) {
     if (new URL(location.href).searchParams.get('pulsusNumber') !== threadId) {
       await dismissNativeMenu();
       const url = new URL(location.href);
@@ -2902,13 +2903,23 @@
       history.pushState(null, '', `${url.pathname}${url.search}`);
       window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
     }
+    const ready = () => {
+      const header = currentChatHeaderTitle();
+      // Driving the router only shows the cached title; a chat that was not opened in this
+      // session is not loaded and has no header actions, so those must exist too. The route
+      // must be this exact thread: same-titled chats look identical in the header.
+      return header
+        && matchKey(header) === matchKey(title)
+        && new URL(location.href).searchParams.get('pulsusNumber') === threadId
+        && semanticMenuButton() ? header : null;
+    };
     try {
-      await waitFor(() => {
-        const header = currentChatHeaderTitle();
-        // Driving the router only shows the cached title; a chat that was not opened in this
-        // session is not loaded and has no header actions, so those must exist too.
-        return header && matchKey(header) === matchKey(title) && semanticMenuButton() ? header : null;
-      }, 'the selected chat header', 1500);
+      await waitFor(ready, 'the selected chat header', 1500);
+      if (settle) {
+        // With same-titled chats the previous chat's header can linger for a moment.
+        await new Promise((resolve) => later(resolve, settle));
+        if (!ready()) return false;
+      }
       return true;
     } catch {
       return false;
@@ -2917,11 +2928,16 @@
 
   async function openChatForAction(id) {
     const chat = knownChats.find((candidate) => candidate.id === id);
-    const threadIds = chat ? threadIdsForTitle(chat.title) : [];
-    if (chat && threadIds.length && await navigateToThread(threadIds[0], chat.title)) {
+    const threadId = chat?.threadId ?? (chat ? threadIdsForTitle(chat.title)[0] : null);
+    if (chat && threadId && await navigateToThread(threadId, chat.title, { settle: chat.duplicate ? 700 : 0 })) {
       activeCatalogueId = id;
       activeCatalogueUrl = location.href;
       return null;
+    }
+    if (chat?.duplicate) {
+      // Same-titled rows cannot be told apart in the native sidebar; guessing could act on
+      // the wrong chat, so only the exact route is allowed for them.
+      throw new Error(`Could not open "${chat.title}" directly; it shares its title with another chat.`);
     }
     return findChatRow(id);
   }
@@ -3353,23 +3369,37 @@
   // The server list is the truth for which chats exist and what they are called. A chat that
   // was just created or renamed (Zapia names it after its first message) would otherwise
   // keep its old title in the panel next to the new one until the next full sidebar scan.
-  // Server threads in list order -> catalogue entries. Existing entries are reused by title so
-  // their identity is stable; new or renamed chats get an entry named after the server label.
+  // Server threads in list order -> catalogue entries, one per thread. The first chat with a
+  // title keeps the plain `text:<title>` id; further chats with the same title get `#2`, `#3`.
+  // Entries carry the thread id, so actions, unread counts and the copy action address the
+  // exact chat even when titles repeat.
   function reconcileChatList(chats, serverThreads) {
-    const existing = new Map(chats.map((chat) => [matchKey(chat.title), chat]));
+    const threads = [...serverThreads].filter((thread) => thread.label);
+    const labelCount = new Map();
+    for (const thread of threads) {
+      const key = matchKey(thread.label);
+      labelCount.set(key, (labelCount.get(key) ?? 0) + 1);
+    }
+    const existing = new Map(chats.map((chat) => [chat.id, chat]));
+    const seen = new Map();
     const used = new Set();
     const next = [];
-    for (const thread of serverThreads) {
-      if (!thread.label) continue;
+    for (const thread of threads) {
       const key = matchKey(thread.label);
-      if (used.has(key)) continue;
-      used.add(key);
-      const chat = existing.get(key);
+      const ordinal = (seen.get(key) ?? 0) + 1;
+      seen.set(key, ordinal);
+      const id = ordinal === 1 ? `text:${thread.label}` : `text:${thread.label}#${ordinal}`;
+      const duplicate = labelCount.get(key) > 1;
+      used.add(id);
+      const chat = existing.get(id);
       next.push(chat
-        ? (chat.pinned === thread.pinned ? chat : { ...chat, pinned: thread.pinned })
-        : { id: `text:${thread.label}`, title: thread.label, pinned: thread.pinned });
+        && chat.pinned === thread.pinned
+        && chat.threadId === thread.id
+        && Boolean(chat.duplicate) === duplicate
+        ? chat
+        : { id, title: thread.label, pinned: thread.pinned, threadId: thread.id, duplicate });
     }
-    const dropped = chats.filter((chat) => !used.has(matchKey(chat.title)));
+    const dropped = chats.filter((chat) => !used.has(chat.id));
     return { next, dropped };
   }
 
@@ -3418,7 +3448,7 @@
     if (!serverLabelKeys()) return;
 
     const { next, dropped } = reconcileChatList(knownChats, server.values());
-    const signature = (list) => list.map((chat) => `${chat.id}|${chat.pinned}`).join('\n');
+    const signature = (list) => list.map((chat) => `${chat.id}|${chat.pinned}|${chat.threadId ?? ''}|${chat.duplicate ? 1 : 0}`).join('\n');
     if (!next.length || signature(next) === signature(knownChats)) return;
 
     for (const chat of dropped) retainedTitles.add(chat.title);
@@ -3760,7 +3790,7 @@
       for (const [index, chat] of chats.entries()) {
         copyProgress = `${index + 1}/${chats.length}`;
         renderManagerPanel();
-        const threadIds = threadIdsForTitle(chat.title);
+        const threadIds = chat.threadId ? [chat.threadId] : threadIdsForTitle(chat.title);
         if (!threadIds.length) {
           missing.push(chat.title);
           continue;
@@ -3822,7 +3852,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.38',
+    version: '0.5.39',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
