@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.26
+// @version      0.5.29
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -83,6 +83,9 @@
   function normalizeSpace(value) {
     return String(value ?? '').replace(/\s+/gu, ' ').trim();
   }
+
+  // Zapia words the Radar prompt differently across Portuguese locales.
+  const RADAR_PROMPT_PATTERN = /^(?:Diz-me|Me diga) o que fazer$/u;
 
   const CHAT_HEADER_BOTTOM = 70;
 
@@ -657,6 +660,7 @@
     threadListFromPages,
     findStaleThreadIds,
     mergeUnreadCounts,
+    RADAR_PROMPT_PATTERN,
     mergeMessagePages,
     formatChatContext,
     matchKey,
@@ -1603,7 +1607,7 @@
         hasCloseButton = true;
       }
 
-      if (label === 'Diz-me o que fazer') {
+      if (RADAR_PROMPT_PATTERN.test(label)) {
         hasRadarPrompt = true;
       }
 
@@ -1629,7 +1633,7 @@
         || '',
       );
 
-      if (label === 'Diz-me o que fazer') {
+      if (RADAR_PROMPT_PATTERN.test(label)) {
         return 'prompt';
       }
 
@@ -1673,6 +1677,31 @@
     return radarOverlayDetected || radarInteractionActive;
   }
 
+  // With Flutter accessibility on (which this script needs), the semantic text field of the
+  // Radar prompt is rebuilt ~100 ms after it takes focus, which drops focus and collapses the
+  // prompt. Zapia behaves the same without this script once accessibility is enabled. Keeping
+  // the semantics tree invisible while the field settles lets it stay open; the field's input
+  // then receives focus so typing works.
+  const RADAR_PROMPT_SETTLE_MS = 900;
+
+  function shieldRadarPrompt() {
+    const host = document.querySelector('flt-semantics-host');
+    if (!host || host.dataset.zapiaManagerShield) return;
+
+    const restore = () => {
+      host.style.visibility = '';
+      delete host.dataset.zapiaManagerShield;
+    };
+
+    host.dataset.zapiaManagerShield = 'true';
+    host.style.visibility = 'hidden';
+    lifetime.signal.addEventListener('abort', restore, { once: true });
+    later(() => {
+      restore();
+      document.querySelector('flt-semantics input, flt-semantics textarea')?.focus();
+    }, RADAR_PROMPT_SETTLE_MS);
+  }
+
   function installRadarProtection() {
     if (radarProtectionInterval) return;
 
@@ -1680,6 +1709,8 @@
       const kind = radarTargetKind(event.target);
 
       if (!kind) return;
+
+      if (kind === 'prompt') shieldRadarPrompt();
 
       if (kind === 'close') {
         radarInteractionActive = false;
@@ -1931,16 +1962,19 @@
   // pointer position, so neither is affected.
   function installMessageClickGuard() {
     document.addEventListener('click', (event) => {
-      if (!event.isTrusted || event.target?.tagName !== 'FLT-SEMANTICS') return;
+      if (!event.isTrusted || event.target?.tagName !== 'FLT-SEMANTICS' || isRadarOverlayOpen()) return;
       const composerTops = [...document.querySelectorAll('flt-semantics')]
         .filter((node) => semanticLabel(node).startsWith('Adicionar anexo'))
         .map((node) => node.getBoundingClientRect().top);
+      // No chat composer means this is not a conversation view (Radar, empty states):
+      // every control there is meant to be clicked, so the guard stays out of the way.
+      if (!composerTops.length) return;
       const navRight = getChatViewport()?.nav.getBoundingClientRect().right ?? 280;
       if (isChatBodyPoint({
         clientX: event.clientX,
         clientY: event.clientY,
         navRight,
-        composerTop: composerTops.length ? Math.min(...composerTops) : window.innerHeight,
+        composerTop: Math.min(...composerTops),
       })) {
         event.stopImmediatePropagation();
         event.preventDefault();
@@ -3394,7 +3428,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.26',
+    version: '0.5.29',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

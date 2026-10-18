@@ -598,3 +598,10 @@ test('mergeUnreadCounts zeroes absent threads only for a complete unread list an
   // The input is never mutated.
   assert.equal(current.get('a'), 2);
 });
+
+test('the Radar prompt is recognised under both Portuguese wordings and nothing else', () => {
+  assert.equal(manager.RADAR_PROMPT_PATTERN.test('Diz-me o que fazer'), true);
+  assert.equal(manager.RADAR_PROMPT_PATTERN.test('Me diga o que fazer'), true);
+  assert.equal(manager.RADAR_PROMPT_PATTERN.test('Me diga o que fazer hoje'), false);
+  assert.equal(manager.RADAR_PROMPT_PATTERN.test('Gravar mensagem de áudio'), false);
+});
