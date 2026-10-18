@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.32
+// @version      0.5.34
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -371,10 +371,17 @@
       if (at >= 0) {
         result[at] = chat;
         anchor = at;
-      } else {
-        anchor += 1;
-        result.splice(anchor, 0, chat);
+        continue;
       }
+
+      let position = anchor + 1;
+      if (!chat.pinned) {
+        // A chat that is not pinned never goes inside the pinned block at the top.
+        const firstUnpinned = result.findIndex((other) => !other.pinned);
+        position = Math.max(position, firstUnpinned < 0 ? result.length : firstUnpinned);
+      }
+      result.splice(position, 0, chat);
+      anchor = position;
     }
 
     return result;
@@ -2906,7 +2913,7 @@
     if (!chatScanRunning) {
       const merged = mergeChatList(
         knownChats,
-        rows.map(nativeChatRecord),
+        rows.map(nativeChatRecord).filter(isOnServer),
       );
 
       if (merged.length !== knownChats.length
@@ -3044,6 +3051,12 @@
   let routeThreadId = null;
   const REPLY_STATUS_DB = 'threadreplystatusbox';
   let pendingThreadIds = new Set();
+  let pendingTitleKeys = new Set();
+  let threadsVersion = 0;
+  let reconciledKey = '';
+  let serverKeysCache = { version: -1, keys: null };
+  let untitledRefreshes = 0;
+  let lastUntitledRefresh = 0;
   let replyStatusWarned = false;
 
   // received: [{ id, unread }]. A complete has_unread=true list names every unread
@@ -3130,9 +3143,11 @@
           id: thread.id,
           label: typeof thread.label === 'string' ? thread.label : '',
           pinned: (body.threads_pinned ?? []).some((pinned) => pinned?.id === thread.id),
+          createdAt: typeof thread.created_at === 'string' ? thread.created_at : '',
         })),
       });
       titleIndexCache = null;
+      threadsVersion += 1;
     }
     scheduleStaleCheck();
   }
@@ -3143,7 +3158,7 @@
   }
 
   function pendingSignature() {
-    return [...pendingThreadIds].sort().join(',');
+    return `${[...pendingThreadIds].sort().join(',')}|${[...pendingTitleKeys].sort().join(',')}`;
   }
 
   // Zapia keeps one record per thread whose answer it is still waiting for, e.g.
@@ -3231,11 +3246,49 @@
     return { next, dropped };
   }
 
+  // Labels of every server thread, or null while the list is incomplete or a brand-new chat
+  // still has no title (Zapia names it ~15 s after the first message).
+  function serverLabelKeys() {
+    if (serverKeysCache.version === threadsVersion) return serverKeysCache.keys;
+    const server = threadListFromPages([...threadPages.values()]);
+    const threads = server ? [...server.values()] : [];
+    // Only a chat created within the last minutes counts as "about to get a title".
+    const waiting = threads.some((thread) => !thread.label && Date.now() - Date.parse(thread.createdAt) < 180000);
+    const keys = server && threads.length && !waiting
+      ? new Set(threads.filter((thread) => thread.label).map((thread) => matchKey(thread.label)))
+      : null;
+    serverKeysCache = { version: threadsVersion, keys };
+    return keys;
+  }
+
+  // Native rows can lag behind the server (the sidebar keeps the first-message title for a
+  // couple of seconds after the rename) and Flutter recycles nodes, so once the whole server
+  // list is known only rows it knows are allowed into the catalogue.
+  function isOnServer(chat) {
+    const keys = serverLabelKeys();
+    return !keys || keys.has(matchKey(chat.title));
+  }
+
   function reconcileCatalogue() {
     if (chatScanRunning || chatActionDepth > 0 || !knownChats.length) return;
+    // Zapia delivers the generated title without refetching the list, so ask for it ourselves
+    // while a new chat is untitled (every 4 s, at most 40 times).
+    if (threadListFromPages([...threadPages.values()]) && !serverLabelKeys()) {
+      if (apiSession && untitledRefreshes < 40 && Date.now() - lastUntitledRefresh >= 4000) {
+        untitledRefreshes += 1;
+        lastUntitledRefresh = Date.now();
+        void fetchThreadChain().catch(() => {});
+      }
+    } else {
+      untitledRefreshes = 0;
+    }
+    const key = `${chatListVersion}:${threadsVersion}`;
+    if (key === reconciledKey) return;
     const server = threadListFromPages([...threadPages.values()]);
     if (!server) return;
     chainAttempts = 0;
+    reconciledKey = key;
+    if (!serverLabelKeys()) return;
 
     const { next, dropped } = reconcileChatList(knownChats, server.values());
     const signature = (list) => list.map((chat) => `${chat.id}|${chat.pinned}`).join('\n');
@@ -3243,8 +3296,31 @@
 
     for (const chat of dropped) retainedTitles.add(chat.title);
     setKnownChats(next);
+    reconciledKey = `${chatListVersion}:${threadsVersion}`;
     pruneSelection();
     if (activeCatalogueId && !next.some((chat) => chat.id === activeCatalogueId)) activeCatalogueId = null;
+    renderManagerPanel();
+  }
+
+  function labelForThreadId(id) {
+    for (const page of threadPages.values()) {
+      const thread = page.threads.find((candidate) => candidate.id === id);
+      if (thread?.label) return thread.label;
+    }
+    return null;
+  }
+
+  // A chat without a server title yet (just created) is matched through its cache record,
+  // which holds the title the sidebar is drawing.
+  async function titleKeysForUnlabeled(ids) {
+    const unlabeled = ids.filter((id) => !labelForThreadId(id));
+    if (!unlabeled.length) return new Set();
+    try {
+      const found = await staleThreadTitles(unlabeled);
+      return new Set(found.filter(({ title }) => title).map(({ title }) => matchKey(title)));
+    } catch {
+      return new Set();
+    }
   }
 
   async function refreshPendingReplies() {
@@ -3261,12 +3337,16 @@
     if (!lifetime.signal.aborted && [...next].some((id) => !isKnownThreadId(id))) {
       void requestThreadChain();
     }
-    if (lifetime.signal.aborted || [...next].sort().join(',') === pendingSignature()) return;
+    const titles = await titleKeysForUnlabeled([...next]);
+    const signature = `${[...next].sort().join(',')}|${[...titles].sort().join(',')}`;
+    if (lifetime.signal.aborted || signature === pendingSignature()) return;
     pendingThreadIds = next;
+    pendingTitleKeys = titles;
     renderManagerPanel();
   }
 
   function isReplyPendingForTitle(title) {
+    if (pendingTitleKeys.has(matchKey(title))) return true;
     return pendingThreadIds.size > 0
       && threadIdsForTitle(title).some((id) => pendingThreadIds.has(id));
   }
@@ -3599,6 +3679,7 @@
     installRadarProtection();
     installBrowserTabTitleSync();
     every(refreshPendingReplies, 2000);
+    every(reconcileCatalogue, 1000);
     void refreshPendingReplies();
     if (knownChats.length) renderManagerPanel();
     installSidebarWheelGuard();
@@ -3614,7 +3695,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.32',
+    version: '0.5.34',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
@@ -3624,6 +3705,11 @@
       scanning: chatScanRunning,
       acting: chatActionDepth > 0,
       staleThreads: staleThreadIds.length,
+      threadChainComplete: Boolean(threadListFromPages([...threadPages.values()])),
+      threadChainAttempts: chainAttempts,
+      hasApiSession: Boolean(apiSession),
+      pendingReplies: pendingThreadIds.size,
+      threadPageCount: threadPages.size,
       timeouts: ownedTimeouts.size,
       intervals: ownedIntervals.size,
       frames: ownedFrames.size,

@@ -646,3 +646,16 @@ test('reconcileChatList follows the server list: renames, new chats, pins and re
   assert.equal(same.next[0], chats[0]);
   assert.equal(manager.reconcileChatList([], [{ id: '1', label: 'X', pinned: false }, { id: '2', label: 'X', pinned: false }]).next.length, 1);
 });
+
+test('mergeChatList never places a new unpinned chat inside the pinned block', () => {
+  const existing = [
+    { id: 'p1', title: 'P1', pinned: true },
+    { id: 'p2', title: 'P2', pinned: true },
+    { id: 'a', title: 'A', pinned: false },
+  ];
+  const merged = manager.mergeChatList(existing, [{ id: 'n', title: 'New', pinned: false }]);
+  assert.deepEqual(merged.map((chat) => chat.id), ['p1', 'p2', 'n', 'a']);
+  // a new pinned chat still follows its native neighbour
+  const pinned = manager.mergeChatList(existing, [{ id: 'p1', title: 'P1', pinned: true }, { id: 'p3', title: 'P3', pinned: true }]);
+  assert.deepEqual(pinned.map((chat) => chat.id), ['p1', 'p3', 'p2', 'a']);
+});
