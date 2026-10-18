@@ -699,3 +699,23 @@ test('summarizeBatch reports successes plainly and lists failed chats', () => {
   assert.equal(partial.text, 'Prefixed 2 of 6. Failed: "a", "b", "c" and 1 more. Zapia did not render chat x.');
   assert.equal(manager.summarizeBatch('Prefixed', 1, 0, failed.slice(0, 1)).kind, 'error');
 });
+
+test('chat id helpers read, set and find the [number] of a chat', () => {
+  assert.equal(manager.chatIdFromTitle('[5] Preparar apresentação'), '5');
+  assert.equal(manager.chatIdFromTitle('✔ [4] Programa'), '4');
+  assert.equal(manager.chatIdFromTitle('✔️ [12]Programa'), '12');
+  assert.equal(manager.chatIdFromTitle('Resumo [3] solto'), null);
+  assert.equal(manager.chatIdFromTitle('Sem id'), null);
+
+  assert.equal(manager.withChatId('Apresentação de prospecção', 5), '[5] Apresentação de prospecção');
+  assert.equal(manager.withChatId('[2] Capítulo', 7), '[7] Capítulo');
+  assert.equal(manager.withChatId('✔ [4] Programa', 9), '✔ [9] Programa');
+  assert.equal(manager.withChatId('🟡 Zotero', 3), '🟡 [3] Zotero');
+  assert.equal(manager.withChatId('✔️ [4]Programa', 1), '✔️ [1] Programa');
+  assert.equal(manager.withChatId('Resumo [3] solto', 8), '[8] Resumo [3] solto');
+
+  const texts = ['antigo [1] e [2]', 'sem número', 'Consolidei na tarefa [5], depois [6].', 'sem número também'];
+  assert.equal(manager.latestChatIdMention(texts), '6');
+  assert.equal(manager.latestChatIdMention(['nada', 'aqui']), null);
+  assert.equal(manager.latestChatIdMention([]), null);
+});

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.39
+// @version      0.5.40
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -162,6 +162,36 @@
     }
 
     return `${prefix}${stripManagedPrefix(title).trimStart()}`;
+  }
+
+  // Leading id of a title: `[5] Name` or `✔ [5] Name` (managed prefix first, then the id).
+  function chatIdFromTitle(title) {
+    const escaped = configuredPrefixes()
+      .map((prefix) => prefix.trim().replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'))
+      .join('|');
+    const match = new RegExp(`^(?:(?:${escaped})\\uFE0F?\\s*)?\\[(\\d{1,4})\\]`, 'u').exec(String(title ?? '').trimStart());
+    return match ? match[1] : null;
+  }
+
+  // Sets the leading id, keeping any managed prefix in front: `✔ [4] Name` -> `✔ [7] Name`.
+  function withChatId(title, id) {
+    const escaped = configuredPrefixes()
+      .map((prefix) => prefix.trim().replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'))
+      .join('|');
+    const match = new RegExp(`^((?:${escaped})\\uFE0F?\\s*)?(?:\\[\\d{1,4}\\]\\s*)?([\\s\\S]*)$`, 'u')
+      .exec(String(title ?? '').trimStart());
+    const lead = match?.[1] ? match[1].replace(/\s*$/u, ' ') : '';
+    return `${lead}[${id}] ${(match?.[2] ?? '').trimStart()}`.trimEnd();
+  }
+
+  // Texts in on-screen order, top to bottom. The most recent `[number]` wins: the last text
+  // that contains one, and the last number inside it.
+  function latestChatIdMention(texts) {
+    for (let index = texts.length - 1; index >= 0; index -= 1) {
+      const ids = [...String(texts[index] ?? '').matchAll(/\[(\d{1,4})\]/gu)];
+      if (ids.length) return ids.at(-1)[1];
+    }
+    return null;
   }
 
   function normalizeEmoji(value) {
@@ -677,6 +707,9 @@
     titleFromCacheText,
     reconcileChatList,
     chatRangeIds,
+    chatIdFromTitle,
+    withChatId,
+    latestChatIdMention,
     summarizeBatch,
     buildSupportDiagnosticPayload,
     isUnavailableChatError,
@@ -1453,7 +1486,8 @@
     menuButton.click();
   }
 
-  async function applyPrefix(row, prefix) {
+  // Opens the chat's native rename dialog and saves whatever `transform` makes of its title.
+  async function applyRename(row, transform) {
     if (row) {
       await openNativeActions(row);
     } else {
@@ -1480,13 +1514,80 @@
       );
     }
 
-    setInputValue(input, withPrefix(input.value, prefix));
+    setInputValue(input, transform(input.value));
     saveAction.click();
 
     await waitFor(
       () => !input.isConnected || !isVisible(input),
       'the native rename dialog to close',
     );
+  }
+
+  function applyPrefix(row, prefix) {
+    return applyRename(row, (title) => withPrefix(title, prefix));
+  }
+
+  // A button over the open chat that renames it to the id its latest message mentions.
+  // The conversation is drawn on a canvas, so the number itself cannot be a link; the button
+  // appears just above the composer, on the right edge of the message column.
+  let chatIdButton = null;
+
+  function removeChatIdButton() {
+    chatIdButton?.remove();
+    chatIdButton = null;
+  }
+
+  function syncChatIdButton() {
+    if (lifetime.signal.aborted) return;
+    const navRight = getChatViewport()?.nav.getBoundingClientRect().right ?? 280;
+    const nodes = [...document.querySelectorAll('flt-semantics')];
+    const composerTops = nodes
+      .filter((node) => semanticLabel(node).startsWith('Adicionar anexo'))
+      .map((node) => node.getBoundingClientRect().top);
+    const title = currentChatHeaderTitle();
+    if (!composerTops.length || !title || isRadarOverlayOpen() || visibleMenuAction(MENU_RENAME_ACTION)) {
+      removeChatIdButton();
+      return;
+    }
+    const composerTop = Math.min(...composerTops);
+    const messages = nodes
+      .map((node) => ({ node, rect: node.getBoundingClientRect() }))
+      .filter(({ node, rect }) => (node.getAttribute('aria-label') || node.textContent || '').trim().startsWith('Mensagem de Zapia')
+        && rect.left >= navRight && rect.bottom > CHAT_HEADER_BOTTOM && rect.top < composerTop)
+      .sort((a, b) => a.rect.top - b.rect.top);
+    const id = latestChatIdMention(messages.map(({ node }) => node.getAttribute('aria-label') || node.textContent || ''));
+    if (!id || chatIdFromTitle(title) === id) {
+      removeChatIdButton();
+      return;
+    }
+    if (!chatIdButton) {
+      chatIdButton = document.createElement('button');
+      chatIdButton.type = 'button';
+      chatIdButton.className = 'zapia-manager-chat-id';
+      chatIdButton.dataset.zapiaManagerControl = 'true';
+      protectManagedSurface(chatIdButton);
+      chatIdButton.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const wanted = chatIdButton?.dataset.chatId;
+        if (!wanted) return;
+        try {
+          await runChatAction(() => applyRename(null, (current) => withChatId(current, wanted)));
+        } catch (error) {
+          toast(error.message, 'error');
+        }
+      });
+      document.body.append(chatIdButton);
+    }
+    chatIdButton.dataset.chatId = id;
+    chatIdButton.disabled = chatActionDepth > 0;
+    const label = `Rename chat to [${id}]`;
+    if (chatIdButton.textContent !== label) {
+      chatIdButton.textContent = label;
+      chatIdButton.title = `Set the id of this chat to [${id}], keeping its emoji prefix`;
+    }
+    const right = messages.length ? Math.max(...messages.map(({ rect }) => rect.right)) : window.innerWidth - 24;
+    chatIdButton.style.right = `${Math.max(8, window.innerWidth - Math.min(right, window.innerWidth - 8))}px`;
+    chatIdButton.style.bottom = `${Math.max(8, window.innerHeight - composerTop + 10)}px`;
   }
 
   async function deleteChat(row, expectedOverride = '') {
@@ -3176,6 +3277,9 @@
       .zapia-manager-stale-notice { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 11px; background: #3a2e12; color: #f0d9a0; border-bottom: 1px solid #292b2b; }
       .zapia-manager-stale-notice span { flex: 1; min-width: 0; }
       .zapia-manager-copy-context { grid-column: 1 / -1; }
+      .zapia-manager-chat-id { position: fixed; z-index: 2147483646; padding: 5px 11px; border: 1px solid #34a38d; border-radius: 14px; background: #1c3a34; color: #e9fffa; font: 600 12px/1.2 Inter, system-ui, sans-serif; cursor: pointer; pointer-events: auto !important; box-shadow: 0 4px 14px #0007; }
+      .zapia-manager-chat-id:hover:not(:disabled) { background: #24544a; }
+      .zapia-manager-chat-id:disabled { opacity: .5; cursor: default; }
       .zapia-manager-settings input[type="checkbox"] { inline-size: auto; justify-self: start; }
       .zapia-manager-context-dialog { inline-size: min(640px, calc(100vw - 32px)); }
       .zapia-manager-context-text { box-sizing: border-box; inline-size: 100%; block-size: min(50vh, 320px); border: 1px solid #454d4b; border-radius: 5px; background: #242828; color: #f2f3f3; font: 12px/1.4 ui-monospace, monospace; padding: 8px; resize: none; }
@@ -3846,13 +3950,14 @@
 
   function syncLoop() {
     syncOpenThreadRead();
+    syncChatIdButton();
     if (!hasFocusedTextEntry() && !isRadarOverlayOpen()) mountControls();
     else syncNativeSidebarLayout();
 
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.39',
+    version: '0.5.40',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
