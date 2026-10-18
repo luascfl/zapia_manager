@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.20
+// @version      0.5.21
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -207,7 +207,8 @@
           || (view.onlyUnprefixed && unprefixed);
         if (!shown) continue;
       }
-      if (view.hideCompleted && completed) continue;
+      // Asking for completed chats explicitly beats the option that hides them.
+      if (view.hideCompleted && completed && !filters.has('prefix-0')) continue;
       const rank = !promoted ? 0 : chat.pinned ? 0
         : view.prioritizeAgents && agent ? 1
           : view.prioritizeIds && numbered && !completed ? 2 : 3;
@@ -3263,7 +3264,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.20',
+    version: '0.5.21',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

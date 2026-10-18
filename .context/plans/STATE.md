@@ -255,3 +255,10 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Correção: "sem prefixo" passa a ser mais um critério do OU (qualquer filtro ativo ou sem prefixo, fixados sempre contam como sem prefixo). Com um só controle ativo o comportamento não mudou. `hideCompleted` continua valendo por cima.
 - Evidências: 45 testes Node passaram (novo caso de filtros combinados). Ao vivo: `[nº]` = 5, sem prefixo = 15, os dois = 20 (antes 0). Tampermonkey Beta salvou 0.5.20 e uma carga limpa carregou a 0.5.20 com um painel.
 - O problema do Enter foi descartado pelo usuário (resolvido do lado dele); não investigado.
+
+## Filtro de concluídos com Hide completed, 0.5.21, 2026-10-17
+
+- Relato do usuário (com print): com o filtro ✔ ligado aparecia `0 of 94` e "No chats found". O estado tinha `hideCompleted: true` (visível como "Filters and priorities • active"), que escondia justamente os chats ✔ que o filtro pedia.
+- Correção: um filtro ✔ explícito vence `hideCompleted` em `catalogueView`. Sem o filtro ✔, `hideCompleted` continua escondendo os concluídos. Teste novo cobre os dois casos.
+- Evidências: 46 testes Node passaram; ao vivo com `hideCompleted` ligado, o filtro ✔ passou a mostrar 52 de 94. Tampermonkey Beta salvou 0.5.21.
+- Pendente: o relato "clicar em qualquer lugar de um chat com link leva ao link" (US-004) estava em investigação quando este relato chegou; retomado a seguir.

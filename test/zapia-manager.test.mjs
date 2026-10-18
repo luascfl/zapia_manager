@@ -546,3 +546,16 @@ test('catalogueView shows chats matching any active filter, including only-unpre
   assert.deepEqual(ids(['numbered', 'prefix-1']), ['a', 'b', 'd']);
   assert.deepEqual(ids(['numbered'], { ...view, onlyUnprefixed: false }), ['a']);
 });
+
+test('the completed filter still shows completed chats while hideCompleted is on', () => {
+  const chats = [
+    { id: 'a', title: '✔ Done', pinned: false },
+    { id: 'b', title: 'Plain', pinned: false },
+  ];
+  const view = { prioritizeAgents: false, prioritizeIds: false, hideCompleted: true, onlyUnprefixed: false };
+  const ids = (filters) => manager.catalogueView(chats, new Set(filters), prefixes, view).map((chat) => chat.id);
+
+  assert.deepEqual(ids([]), ['b']);
+  assert.deepEqual(ids(['prefix-0']), ['a']);
+  assert.deepEqual(ids(['prefix-0', 'prefix-1']), ['a']);
+});
