@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.35
+// @version      0.5.36
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -72,6 +72,7 @@
 
   const selectedChatIds = new Set();
   let deletionQueue = [];
+  let batchProgress = '';
   let catalogueSearchOpen = false;
   let catalogueSearchQuery = '';
   const HEADER_CLIP_TOP = 50;
@@ -675,6 +676,7 @@
     titleFromCacheText,
     reconcileChatList,
     chatRangeIds,
+    summarizeBatch,
     buildSupportDiagnosticPayload,
     isUnavailableChatError,
     selectedChats,
@@ -1486,8 +1488,8 @@
     );
   }
 
-  async function deleteChat(row) {
-    let expectedTitle = '';
+  async function deleteChat(row, expectedOverride = '') {
+    let expectedTitle = row ? '' : expectedOverride;
     const targetId = row ? chatIdentity(row) : activeCatalogueId;
     if (row) {
       expectedTitle = chatTitle(row);
@@ -1499,7 +1501,7 @@
     const nativeTitle = await waitFor(
       () => {
         const title = currentChatHeaderTitle();
-        return title && (!expectedTitle || title === expectedTitle) ? title : null;
+        return title && (!expectedTitle || matchKey(title) === matchKey(expectedTitle)) ? title : null;
       },
       'the selected chat header',
     ).catch(() => '');
@@ -2306,7 +2308,7 @@
       await task();
     } finally {
       chatActionDepth -= 1;
-      if (refresh) scheduleChatRescan();
+      if (refresh) refreshAfterAction();
       renderManagerPanel();
     }
   }
@@ -2317,22 +2319,61 @@
       .filter((id) => selectedChatIds.has(id));
   }
 
-  async function applyPrefixToSelectedChats(prefix) {
-    queueFromSelection();
+  // Summary of a batch of per-chat actions; failures are listed instead of aborting the batch.
+  function summarizeBatch(pastTense, total, done, failed) {
+    const noun = (count) => `${count} chat${count === 1 ? '' : 's'}`;
+    if (!failed.length) return { kind: 'info', text: `${pastTense} ${noun(done)}.` };
+    const names = failed.slice(0, 3).map((item) => `"${item.title}"`).join(', ');
+    const more = failed.length > 3 ? ` and ${failed.length - 3} more` : '';
+    return {
+      kind: done ? 'warning' : 'error',
+      text: `${pastTense} ${done} of ${total}. Failed: ${names}${more}. ${failed[0].message}`,
+    };
+  }
 
-    if (!deletionQueue.length) {
-      throw new Error('Select at least one chat.');
+  // Runs one action per selected chat. A failure on one chat is recorded and the rest still
+  // run; failed chats stay selected so the action can be retried on just those.
+  async function runBatchAction(verb, pastTense, worker) {
+    queueFromSelection();
+    if (!deletionQueue.length) throw new Error('Select at least one chat.');
+    const ids = [...deletionQueue];
+    const failed = [];
+    let done = 0;
+
+    try {
+      await runChatAction(async () => {
+        for (const [index, id] of ids.entries()) {
+          batchProgress = `${verb} ${index + 1}/${ids.length}`;
+          renderManagerPanel();
+          try {
+            await worker(id);
+            selectedChatIds.delete(id);
+            done += 1;
+          } catch (error) {
+            if (error?.name === 'AbortError') throw error;
+            failed.push({
+              id,
+              title: knownChats.find((chat) => chat.id === id)?.title ?? id,
+              message: error.message,
+            });
+            // A confirmation left open would block every following chat.
+            if (nativeDeleteDialogOpen()) break;
+          }
+        }
+      }, { refresh: false });
+    } finally {
+      batchProgress = '';
+      deletionQueue = [];
     }
 
-    await runChatAction(async () => {
-      for (const id of [...deletionQueue]) {
-        await rediscoverAndApply(id, prefix);
-        selectedChatIds.delete(id);
-      }
-    });
-
-    deletionQueue = [];
+    refreshAfterAction();
+    const result = summarizeBatch(pastTense, ids.length, done, failed);
+    toast(result.text, result.kind);
     mountControls();
+  }
+
+  function applyPrefixToSelectedChats(prefix) {
+    return runBatchAction('Prefixing', 'Prefixed', (id) => rediscoverAndApply(id, prefix));
   }
 
   async function deleteSelectedChats() {
@@ -2342,22 +2383,7 @@
       );
     }
 
-    queueFromSelection();
-
-    if (!deletionQueue.length) {
-      throw new Error('Select at least one chat.');
-    }
-
-
-    await runChatAction(async () => {
-      for (const id of [...deletionQueue]) {
-        await rediscoverAndDelete(id);
-        selectedChatIds.delete(id);
-      }
-    });
-
-    deletionQueue = [];
-    mountControls();
+    await runBatchAction('Deleting', 'Deleted', rediscoverAndDelete);
   }
 
   function pruneHiddenSelection() {
@@ -2595,6 +2621,7 @@
       [...selectedChatIds].join('\u0001'),
       staleThreadIds.join(','),
       copyProgress,
+      batchProgress,
       unreadSignature(),
       pendingSignature(),
     ].join('|');
@@ -2614,7 +2641,7 @@
     title.textContent = 'Chats';
     const summary = document.createElement('span');
     summary.setAttribute('role', 'status');
-    summary.textContent = chatScanRunning ? 'Loading…'
+    summary.textContent = batchProgress ? `${batchProgress}…` : chatScanRunning ? 'Loading…'
       : selectedChatIds.size ? `${selectedChatIds.size} selected`
         : activeFilters.size || preferences.view.onlyUnprefixed || catalogueSearchQuery ? `${chats.length} of ${knownChats.length}` : String(knownChats.length);
     headingCopy.append(title, document.createTextNode(' '), summary);
@@ -2856,12 +2883,60 @@
     )?.remove();
   }
 
+  // Opens a chat for a native action. When its thread id is known the router is driven
+  // directly (about 0.3 s) instead of finding and clicking its row in the native sidebar,
+  // which scrolls the list from the top for every chat. The header must show the chat's
+  // title before anything runs; otherwise the sidebar path is used. Returns the row to act
+  // on, or null when the chat is already open.
+  async function navigateToThread(threadId, title) {
+    if (new URL(location.href).searchParams.get('pulsusNumber') !== threadId) {
+      await dismissNativeMenu();
+      const url = new URL(location.href);
+      url.searchParams.set('pulsusNumber', threadId);
+      history.pushState(null, '', `${url.pathname}${url.search}`);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    }
+    try {
+      await waitFor(() => {
+        const header = currentChatHeaderTitle();
+        return header && matchKey(header) === matchKey(title) ? header : null;
+      }, 'the selected chat header', 4000);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function openChatForAction(id) {
+    const chat = knownChats.find((candidate) => candidate.id === id);
+    const threadIds = chat ? threadIdsForTitle(chat.title) : [];
+    if (chat && threadIds.length && await navigateToThread(threadIds[0], chat.title)) {
+      activeCatalogueId = id;
+      activeCatalogueUrl = location.href;
+      return null;
+    }
+    return findChatRow(id);
+  }
+
+  // After an action the server list is the quick way to see new titles and removals; a full
+  // sidebar scroll is only the fallback when no session has been captured yet.
+  function refreshAfterAction() {
+    if (apiSession) {
+      chainAttempts = 0;
+      lastThreadListRefresh = 0;
+      void requestThreadChain();
+    } else {
+      scheduleChatRescan();
+    }
+  }
+
   async function rediscoverAndApply(id, prefix) {
-    await applyPrefix(await findChatRow(id), prefix);
+    await applyPrefix(await openChatForAction(id), prefix);
   }
 
   async function rediscoverAndDelete(id) {
-    await deleteChat(await findChatRow(id));
+    const title = knownChats.find((chat) => chat.id === id)?.title ?? '';
+    await deleteChat(await openChatForAction(id), title);
     setKnownChats(withoutChatId(knownChats, id));
     selectedChatIds.delete(id);
     if (activeCatalogueId === id) activeCatalogueId = null;
@@ -3734,7 +3809,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.35',
+    version: '0.5.36',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

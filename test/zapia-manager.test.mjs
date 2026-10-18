@@ -669,3 +669,13 @@ test('chatRangeIds returns the inclusive range in list order, whichever way it w
   assert.equal(manager.chatRangeIds(chats, 'zzz', 'c'), null);
   assert.equal(manager.chatRangeIds(chats, null, 'c'), null);
 });
+
+test('summarizeBatch reports successes plainly and lists failed chats', () => {
+  assert.deepEqual(manager.summarizeBatch('Deleted', 3, 3, []), { kind: 'info', text: 'Deleted 3 chats.' });
+  assert.deepEqual(manager.summarizeBatch('Deleted', 1, 1, []), { kind: 'info', text: 'Deleted 1 chat.' });
+  const failed = ['a', 'b', 'c', 'd'].map((title) => ({ id: title, title, message: 'Zapia did not render chat x.' }));
+  const partial = manager.summarizeBatch('Prefixed', 6, 2, failed);
+  assert.equal(partial.kind, 'warning');
+  assert.equal(partial.text, 'Prefixed 2 of 6. Failed: "a", "b", "c" and 1 more. Zapia did not render chat x.');
+  assert.equal(manager.summarizeBatch('Prefixed', 1, 0, failed.slice(0, 1)).kind, 'error');
+});
