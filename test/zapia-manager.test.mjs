@@ -559,3 +559,12 @@ test('the completed filter still shows completed chats while hideCompleted is on
   assert.deepEqual(ids(['prefix-0']), ['a']);
   assert.deepEqual(ids(['prefix-0', 'prefix-1']), ['a']);
 });
+
+test('isChatBodyPoint covers only the conversation body, not the sidebar, header or composer', () => {
+  const area = { navRight: 280, composerTop: 675 };
+  assert.equal(manager.isChatBodyPoint({ clientX: 940, clientY: 545, ...area }), true);
+  assert.equal(manager.isChatBodyPoint({ clientX: 100, clientY: 400, ...area }), false); // sidebar
+  assert.equal(manager.isChatBodyPoint({ clientX: 931, clientY: 30, ...area }), false); // header menu
+  assert.equal(manager.isChatBodyPoint({ clientX: 600, clientY: 700, ...area }), false); // composer
+  assert.equal(manager.isChatBodyPoint({ clientX: 0, clientY: 0, ...area }), false); // keyboard activation
+});

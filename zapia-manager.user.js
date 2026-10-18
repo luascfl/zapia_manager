@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.21
+// @version      0.5.22
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -84,11 +84,20 @@
     return String(value ?? '').replace(/\s+/gu, ' ').trim();
   }
 
+  const CHAT_HEADER_BOTTOM = 70;
+
   function isChatHeaderControl({ parentRole, rect, navRight }) {
     return parentRole !== 'group'
       && rect.left >= navRight
       && rect.top >= 0
-      && rect.top < 70;
+      && rect.top < CHAT_HEADER_BOTTOM;
+  }
+
+  // The conversation body: right of the sidebar, below the header, above the composer.
+  function isChatBodyPoint({ clientX, clientY, navRight, composerTop }) {
+    return clientX >= navRight
+      && clientY >= CHAT_HEADER_BOTTOM
+      && clientY < composerTop;
   }
 
   function isMenuButtonLabel(label) {
@@ -626,6 +635,7 @@
     isHoverActionLabel,
     isMenuButtonLabel,
     isChatHeaderControl,
+    isChatBodyPoint,
     isNavigationActionLabel,
     sidebarPlacement,
     safeProfileTop,
@@ -1907,6 +1917,31 @@
 
     document.body.append(dialog);
     dialog.showModal();
+  }
+
+  // Accessibility semantics (which this script needs) put full-width transparent
+  // buttons over every message, so a real click anywhere on a message acted as a tap
+  // on it: opening its link or copying it. Swallowing only those semantic clicks
+  // leaves Zapia's own pointer handling, which hits just the link text or the icon.
+  // Clicks synthesised by this script are untrusted and keyboard activation has no
+  // pointer position, so neither is affected.
+  function installMessageClickGuard() {
+    document.addEventListener('click', (event) => {
+      if (!event.isTrusted || event.target?.tagName !== 'FLT-SEMANTICS') return;
+      const composerTops = [...document.querySelectorAll('flt-semantics')]
+        .filter((node) => semanticLabel(node).startsWith('Adicionar anexo'))
+        .map((node) => node.getBoundingClientRect().top);
+      const navRight = getChatViewport()?.nav.getBoundingClientRect().right ?? 280;
+      if (isChatBodyPoint({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        navRight,
+        composerTop: composerTops.length ? Math.min(...composerTops) : window.innerHeight,
+      })) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+      }
+    }, { capture: true, signal: lifetime.signal });
   }
 
   function installKeyboardShortcuts() {
@@ -3249,6 +3284,7 @@
     enableFlutterSemantics();
     installStyles();
     installKeyboardShortcuts();
+    installMessageClickGuard();
     installRadarProtection();
     installBrowserTabTitleSync();
     if (knownChats.length) renderManagerPanel();
@@ -3264,7 +3300,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.21',
+    version: '0.5.22',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

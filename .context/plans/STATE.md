@@ -262,3 +262,18 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Correção: um filtro ✔ explícito vence `hideCompleted` em `catalogueView`. Sem o filtro ✔, `hideCompleted` continua escondendo os concluídos. Teste novo cobre os dois casos.
 - Evidências: 46 testes Node passaram; ao vivo com `hideCompleted` ligado, o filtro ✔ passou a mostrar 52 de 94. Tampermonkey Beta salvou 0.5.21.
 - Pendente: o relato "clicar em qualquer lugar de um chat com link leva ao link" (US-004) estava em investigação quando este relato chegou; retomado a seguir.
+
+## Link abrindo com clique em qualquer lugar, 0.5.22, 2026-10-17
+
+- Relato do usuário: num chat com link, clicar em qualquer lugar levava ao link; clicar em pontos aleatórios do chat de Larissa também copiava mensagens ("Mensagem copiada").
+- Reprodução com cliques reais (CDP), `window.open` vigiado: numa aba limpa (Tampermonkey desativado, 0 nós semânticos) só o clique no texto do link abre o Google Docs; espaço vazio, margem e outro trecho da linha não fazem nada. Na aba com o script, o clique em qualquer ponto do parágrafo abre o link, e o vazio de um balão do usuário copia a mensagem.
+- Causa: o script liga a acessibilidade do Flutter (necessária para ler linhas, cabeçalho e menus). Isso cria botões `flt-semantics` transparentes de largura total (638 px) sobre cada mensagem; um clique real neles vira toque na mensagem inteira.
+- Correção 0.5.22: `installMessageClickGuard` engole, em captura, só `click` confiável (`isTrusted`) cujo alvo é `flt-semantics` dentro do corpo da conversa (`isChatBodyPoint`: à direita da barra, abaixo do cabeçalho de 70 px, acima do compositor, usando o menor topo de "Adicionar anexo"). O ponteiro nativo do Flutter segue funcionando como sem o script. Cliques gerados pelo script (não confiáveis) e ativação por teclado (sem posição) não são afetados.
+- Tentativa descartada: `pointer-events: none` nos nós semânticos bloqueava também o clique no link.
+- Evidências: matriz ao vivo com o código instalado: espaço no parágrafo sem abertura, texto do link abre, balão sem cópia no vazio, ícone de copiar copia, menu do cabeçalho abre, compositor recebe foco. 47 testes Node passaram (novo teste de `isChatBodyPoint`). Tampermonkey Beta salvou 0.5.22 (ativado de novo depois do teste sem script) e carga limpa carregou 0.5.22 com um painel. US-004 marcada como concluída.
+
+## Padronização do ✔ nos chats concluídos, 2026-10-17
+
+- Padrão de referência (chat dos bilhetes): `✔` (U+2714) + espaço + título, sem U+FE0F. Dos 52 concluídos, 32 já estavam assim; 15 usavam `✔️` (com U+FE0F, emoji verde) e 5 vinham sem espaço.
+- Os 20 foram selecionados e renomeados pela ação `✔ Prefix` do próprio Manager (renomeia pelo menu nativo, remove a grafia antiga e aplica o padrão). A ação parou algumas vezes com `Zapia did not render chat ...` (erro intermitente de renderização do lado do Zapia, deixado para o usuário diagnosticar com o uso); repetida até esvaziar a seleção.
+- Verificação por nova varredura: 52 concluídos, 52 no padrão, 0 com U+FE0F, 0 sem espaço. Nenhum código mudou por isso (dados do Zapia).

@@ -56,8 +56,8 @@
         "Fix the root cause, with a regression test when it is testable outside the browser."
       ],
       "priority": "medium",
-      "passes": false,
-      "notes": "Not reproduced, so still open. 2026-10-17 live run (Chrome CDP, chat with rich link cards, real Alt+C/Alt+V key events, spies on window.open/pushState/click): every click went to header `Mais ações`, native `Renomear` and the dialog OK; no window.open, no navigation, no errors. Hardening in 0.5.15: `semanticMenuButton` now requires the chat header band (top < 70, right of the sidebar, parent not role=group) via pure helper `isChatHeaderControl`; a decoy `Mais ações` button inserted in the message area before the real one in DOM order was ignored. Unproven: that this was the user's cause. Known remaining unanchored click: `visibleSaveAction` falls back to any semantic button labelled exactly Salvar/Save/Confirmar/OK. Needs from the user: which shortcut, link domain, same or new tab, mouse position."
+      "passes": true,
+      "notes": "Resolved in 0.5.22. Reproduced with real mouse clicks: without the script only the link text opens a link; with it a click anywhere on the paragraph opens it (and a click on the blank part of a user bubble copies the message). Root cause: the accessibility semantics the script enables put full-width transparent flt-semantics buttons over each message; a real click on them acts as a tap on the whole message. Fix: a capture-phase click guard swallows only trusted clicks whose target is a flt-semantics node inside the conversation body (isChatBodyPoint: right of the sidebar, below the 70px header, above the composer). Zapia pointer handling then behaves as in a browser without the script. Script-made clicks are untrusted and keyboard activation has no pointer position, so both are unaffected. Live matrix: blank paragraph no open, link text opens, user bubble blank no copy, copy icon copies, header menu opens, composer focuses. 47 Node tests pass. The 0.2.26 and 0.5.15 hardening of the shortcut path stays."
     },
     {
       "id": "US-005",
