@@ -615,3 +615,12 @@ test('parseReplyStatus reads Zapia pending records, including double-encoded JSO
   assert.equal(manager.parseReplyStatus('not json'), false);
   assert.equal(manager.parseReplyStatus(undefined), false);
 });
+
+test('titleFromCacheText picks the longest known title found in a cache record', () => {
+  const titles = ['asd', 'Preparar apresentação de prospecção', 'Teste de conversa', ''];
+  assert.equal(manager.titleFromCacheText('\u0001..ape@x..Teste de conversa..\u0000', titles), 'Teste de conversa');
+  // a short title that is only a substring of a longer one must not win
+  assert.equal(manager.titleFromCacheText('x Preparar apresentação de prospecção asd', titles), 'Preparar apresentação de prospecção');
+  assert.equal(manager.titleFromCacheText('nothing here', titles), null);
+  assert.equal(manager.titleFromCacheText('anything', []), null);
+});

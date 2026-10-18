@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.30
+// @version      0.5.31
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -665,6 +665,7 @@
     mergeMessagePages,
     formatChatContext,
     matchKey,
+    titleFromCacheText,
     buildSupportDiagnosticPayload,
     isUnavailableChatError,
     selectedChats,
@@ -3166,6 +3167,24 @@
     }
   }
 
+  let lastThreadListRefresh = 0;
+
+  function isKnownThreadId(id) {
+    for (const page of threadPages.values()) {
+      if (page.threads.some((thread) => thread.id === id)) return true;
+    }
+    return false;
+  }
+
+  // A chat created a moment ago is not in the thread list we observed yet. Asking for the
+  // first page lets the observer learn its title, so its spinner can be shown.
+  async function fetchFirstThreadsPage() {
+    const url = new URL('/api/v1/threads', apiSession.origin);
+    for (const [name, value] of Object.entries(apiSession.params)) url.searchParams.set(name, value);
+    url.searchParams.set('limit', '50');
+    await fetch(url, { signal: lifetime.signal });
+  }
+
   async function refreshPendingReplies() {
     let next;
     try {
@@ -3176,6 +3195,15 @@
         console.warn('[Zapia Manager] could not read pending replies:', error);
       }
       return;
+    }
+    if (
+      !lifetime.signal.aborted
+      && apiSession
+      && Date.now() - lastThreadListRefresh > 5000
+      && [...next].some((id) => !isKnownThreadId(id))
+    ) {
+      lastThreadListRefresh = Date.now();
+      fetchFirstThreadsPage().catch(() => {});
     }
     if (lifetime.signal.aborted || [...next].sort().join(',') === pendingSignature()) return;
     pendingThreadIds = next;
@@ -3313,15 +3341,43 @@
     }
   }
 
+  // The sidebar draws chat titles from the same cache record, so the title of a stale chat
+  // appears as text inside its raw bytes. The longest known title found there wins.
+  function titleFromCacheText(text, titles) {
+    let best = null;
+    for (const title of titles) {
+      if (title && title.length >= 2 && text.includes(title) && (!best || title.length > best.length)) best = title;
+    }
+    return best;
+  }
+
+  async function staleThreadTitles(ids) {
+    const db = await openThreadCache();
+    try {
+      const store = db.transaction(THREAD_CACHE_STORE, 'readonly').objectStore(THREAD_CACHE_STORE);
+      const known = knownChats.map((chat) => chat.title);
+      const decoder = new TextDecoder('utf-8');
+      const found = [];
+      for (const id of ids) {
+        const value = await idbRequest(store.get(id));
+        const bytes = value instanceof ArrayBuffer
+          ? new Uint8Array(value)
+          : ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : null;
+        found.push({ id, title: bytes ? titleFromCacheText(decoder.decode(bytes), known) : null });
+      }
+      return found;
+    } finally {
+      db.close();
+    }
+  }
+
   async function purgeStaleThreads() {
     const server = threadListFromPages([...threadPages.values()]);
     if (!server || !staleThreadIds.length || chatActionDepth > 0) return;
     const ids = [...staleThreadIds];
-    const serverTitles = new Set([...server.values()].map((thread) => matchKey(thread.label)));
-    const titles = knownChats.map((chat) => chat.title).filter((text) => !serverTitles.has(matchKey(text)));
-    const listed = titles.length === ids.length
-      ? `\n\n${titles.slice(0, 12).map((text) => `• ${text}`).join('\n')}${titles.length > 12 ? `\n… and ${titles.length - 12} more` : ''}`
-      : '';
+    const resolved = await staleThreadTitles(ids).catch(() => ids.map((id) => ({ id, title: null })));
+    const lines = resolved.map(({ id, title }) => `\u2022 ${title ?? `(title not found, id ${id.slice(-8)})`}`);
+    const listed = `\n\n${lines.slice(0, 12).join('\n')}${lines.length > 12 ? `\n\u2026 and ${lines.length - 12} more` : ''}`;
 
     if (!window.confirm(
       `${ids.length} chat${ids.length === 1 ? ' is' : 's are'} still listed by Zapia but ${ids.length === 1 ? 'does' : 'do'} not exist on its servers, so ${ids.length === 1 ? 'it' : 'they'} cannot open or be deleted.${listed}\n\nRemove ${ids.length === 1 ? 'it' : 'them'} from the Zapia cache stored in this browser? A backup is kept in this browser's local storage and the page will reload.`,
@@ -3498,7 +3554,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.30',
+    version: '0.5.31',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
