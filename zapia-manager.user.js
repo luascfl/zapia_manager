@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.36
+// @version      0.5.37
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -2218,22 +2218,28 @@
   }
 
   async function findChatRow(id) {
-    let row = visibleChatRowById(id);
+    // The native list loads its next page while it is scrolled, so a row far down can be
+    // missing on the first pass; look again before giving up.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      assertRuntimeActive();
+      let row = visibleChatRowById(id);
 
-    if (row) return row;
+      if (row) return row;
 
-    await scrollSidebarToTop();
+      await scrollSidebarToTop();
 
-    for (;;) {
+      for (;;) {
+        row = visibleChatRowById(id);
+
+        if (row) return row;
+        if (!(await scrollSidebarStep(SIDEBAR_SCROLL_STEP))) break;
+      }
+
       row = visibleChatRowById(id);
 
       if (row) return row;
-      if (!(await scrollSidebarStep(SIDEBAR_SCROLL_STEP))) break;
+      await new Promise((resolve) => later(resolve, 1200));
     }
-
-    row = visibleChatRowById(id);
-
-    if (row) return row;
 
     throw new Error(`Zapia did not render chat ${id}.`);
   }
@@ -2899,8 +2905,10 @@
     try {
       await waitFor(() => {
         const header = currentChatHeaderTitle();
-        return header && matchKey(header) === matchKey(title) ? header : null;
-      }, 'the selected chat header', 4000);
+        // Driving the router only shows the cached title; a chat that was not opened in this
+        // session is not loaded and has no header actions, so those must exist too.
+        return header && matchKey(header) === matchKey(title) && semanticMenuButton() ? header : null;
+      }, 'the selected chat header', 1500);
       return true;
     } catch {
       return false;
@@ -3809,7 +3817,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.36',
+    version: '0.5.37',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
