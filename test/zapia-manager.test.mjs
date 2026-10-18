@@ -605,3 +605,13 @@ test('the Radar prompt is recognised under both Portuguese wordings and nothing 
   assert.equal(manager.RADAR_PROMPT_PATTERN.test('Me diga o que fazer hoje'), false);
   assert.equal(manager.RADAR_PROMPT_PATTERN.test('Gravar mensagem de áudio'), false);
 });
+
+test('parseReplyStatus reads Zapia pending records, including double-encoded JSON', () => {
+  const record = { status: 'pending', statusText: 'Analisando', createdAtMs: 1 };
+  assert.equal(manager.parseReplyStatus(JSON.stringify(JSON.stringify(record))), true);
+  assert.equal(manager.parseReplyStatus(JSON.stringify(record)), true);
+  assert.equal(manager.parseReplyStatus(record), true);
+  assert.equal(manager.parseReplyStatus(JSON.stringify({ ...record, status: 'done' })), false);
+  assert.equal(manager.parseReplyStatus('not json'), false);
+  assert.equal(manager.parseReplyStatus(undefined), false);
+});

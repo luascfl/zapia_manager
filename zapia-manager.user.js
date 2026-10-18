@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.29
+// @version      0.5.30
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -221,7 +221,7 @@
           || (view.onlyUnprefixed && unprefixed);
         if (!shown) continue;
       }
-      if (unreadOnly && !(chat.unread > 0)) continue;
+      if (unreadOnly && !(chat.unread > 0 || chat.pending)) continue;
       // Asking explicitly for completed or unread chats beats the option that hides completed ones.
       if (view.hideCompleted && completed && !typeFilters.has('prefix-0') && !unreadOnly) continue;
       const rank = !promoted ? 0 : chat.pinned ? 0
@@ -660,6 +660,7 @@
     threadListFromPages,
     findStaleThreadIds,
     mergeUnreadCounts,
+    parseReplyStatus,
     RADAR_PROMPT_PATTERN,
     mergeMessagePages,
     formatChatContext,
@@ -2047,7 +2048,11 @@
 
   function filteredChats() {
     const visibleKnownChats = excludeHiddenChats(knownChats, preferences.hiddenChats)
-      .map((chat) => ({ ...chat, unread: unreadCountForTitle(chat.title) }));
+      .map((chat) => ({
+        ...chat,
+        unread: unreadCountForTitle(chat.title),
+        pending: isReplyPendingForTitle(chat.title),
+      }));
     return filterChatsByQuery(
       catalogueView(visibleKnownChats, activeFilters, preferences.prefixes, preferences.view),
       catalogueSearchQuery,
@@ -2571,6 +2576,7 @@
       staleThreadIds.join(','),
       copyProgress,
       unreadSignature(),
+      pendingSignature(),
     ].join('|');
     if (panel.dataset.zapiaManagerState === state) return;
     const previousScroll = panel.querySelector('.zapia-manager-chat-list')?.scrollTop
@@ -2737,6 +2743,15 @@
       menu.classList.add('zapia-manager-chat-menu');
       menu.disabled = busy;
       option.append(select, open);
+      if (chat.pending) {
+        const spinner = document.createElement('span');
+        spinner.className = 'zapia-manager-pending';
+        spinner.textContent = '\u21bb';
+        spinner.setAttribute('role', 'img');
+        spinner.setAttribute('aria-label', 'Zapia is replying');
+        spinner.title = 'Zapia is replying';
+        option.append(spinner);
+      }
       if (chat.unread > 0) {
         const badge = document.createElement('span');
         badge.className = 'zapia-manager-unread';
@@ -2968,6 +2983,8 @@
       .zapia-manager-chat-title:hover:not(:disabled) { background: transparent; }
       .zapia-manager-unread { flex: 0 0 auto; min-inline-size: 18px; padding: 0 6px; border-radius: 9px; background: #1f8f7a; color: #e9fffa; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; box-sizing: border-box; }
       .zapia-manager-unread-filter { color: #2fb59b; }
+      .zapia-manager-pending { flex: 0 0 auto; inline-size: 18px; text-align: center; font-size: 15px; line-height: 18px; color: #8fa3b3; animation: zapia-manager-spin 1.4s linear infinite; }
+      @keyframes zapia-manager-spin { to { transform: rotate(360deg); } }
       .zapia-manager-chat-menu { flex: 0 0 auto; border: 0; padding: 0 2px; min-inline-size: 20px; opacity: 0; }
       .zapia-manager-chat-option:hover .zapia-manager-chat-menu, .zapia-manager-chat-option:focus-within .zapia-manager-chat-menu { opacity: 1; }
       .zapia-manager-row-menu {
@@ -3023,6 +3040,9 @@
   let staleThreadIds = [];
   let staleCheckScheduled = false;
   let routeThreadId = null;
+  const REPLY_STATUS_DB = 'threadreplystatusbox';
+  let pendingThreadIds = new Set();
+  let replyStatusWarned = false;
 
   // received: [{ id, unread }]. A complete has_unread=true list names every unread
   // thread, so anything absent from it is read. The chat that is open counts as read.
@@ -3119,6 +3139,54 @@
       .map(([id, count]) => `${id}:${count}`).join(',');
   }
 
+  function pendingSignature() {
+    return [...pendingThreadIds].sort().join(',');
+  }
+
+  // Zapia keeps one record per thread whose answer it is still waiting for, e.g.
+  // {"status":"pending","statusText":"Analisando",...}, possibly JSON-encoded twice.
+  function parseReplyStatus(value) {
+    try {
+      let parsed = value;
+      for (let pass = 0; pass < 2 && typeof parsed === 'string'; pass += 1) parsed = JSON.parse(parsed);
+      return parsed?.status === 'pending';
+    } catch {
+      return false;
+    }
+  }
+
+  async function readPendingThreadIds() {
+    const db = await openThreadCache(REPLY_STATUS_DB);
+    try {
+      const store = db.transaction(THREAD_CACHE_STORE, 'readonly').objectStore(THREAD_CACHE_STORE);
+      const [keys, values] = await Promise.all([idbRequest(store.getAllKeys()), idbRequest(store.getAll())]);
+      return new Set(keys.filter((key, index) => parseReplyStatus(values[index])));
+    } finally {
+      db.close();
+    }
+  }
+
+  async function refreshPendingReplies() {
+    let next;
+    try {
+      next = await readPendingThreadIds();
+    } catch (error) {
+      if (!replyStatusWarned) {
+        replyStatusWarned = true;
+        console.warn('[Zapia Manager] could not read pending replies:', error);
+      }
+      return;
+    }
+    if (lifetime.signal.aborted || [...next].sort().join(',') === pendingSignature()) return;
+    pendingThreadIds = next;
+    renderManagerPanel();
+  }
+
+  function isReplyPendingForTitle(title) {
+    return pendingThreadIds.size > 0
+      && threadIdsForTitle(title).some((id) => pendingThreadIds.has(id));
+  }
+
   // Observation only: Zapia receives the original promise untouched, and our
   // read of a cloned response can never affect its own request.
   function installThreadListObserver() {
@@ -3150,9 +3218,9 @@
   }
 
   // Never creates the database: opening a missing one aborts its upgrade.
-  function openThreadCache() {
+  function openThreadCache(name = THREAD_CACHE_DB) {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(THREAD_CACHE_DB);
+      const request = indexedDB.open(name);
       request.onupgradeneeded = () => request.transaction.abort();
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
@@ -3414,6 +3482,8 @@
     installMessageClickGuard();
     installRadarProtection();
     installBrowserTabTitleSync();
+    every(refreshPendingReplies, 2000);
+    void refreshPendingReplies();
     if (knownChats.length) renderManagerPanel();
     installSidebarWheelGuard();
     syncNativeSidebarLayout();
@@ -3428,7 +3498,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.29',
+    version: '0.5.30',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
