@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.24
+// @version      0.5.25
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -85,7 +85,6 @@
   }
 
   const CHAT_HEADER_BOTTOM = 70;
-  const MINIMIZED_BAR_HEIGHT = 36;
 
   function isChatHeaderControl({ parentRole, rect, navRight }) {
     return parentRole !== 'group'
@@ -2793,13 +2792,8 @@
     const menuOverlaps = Boolean(bounds && action && rectanglesOverlap(bounds, action.getBoundingClientRect()));
     panel.classList.toggle('is-sidebar-hidden', !bounds || isRadarOverlayOpen() || nativeEntry || menuOverlaps);
     if (bounds) {
-      // Minimized, only the expand button remains: keep it on the profile bar's free right
-      // end instead of floating over native chat rows and their ⋮ actions.
-      const top = preferences.panel.minimized
-        ? viewport.bottom + Math.max(0, (innerHeight - viewport.bottom - MINIMIZED_BAR_HEIGHT) / 2)
-        : bounds.top;
       for (const [name, value] of Object.entries({
-        left: `${bounds.left}px`, top: `${top}px`,
+        left: `${bounds.left}px`, top: `${bounds.top}px`,
         width: `${bounds.width}px`, height: `${bounds.height}px`,
       })) {
         if (panel.style[name] !== value) panel.style[name] = value;
@@ -2901,9 +2895,8 @@
         font: 13px/1.35 Inter, system-ui, sans-serif; pointer-events: auto !important;
       }
       .zapia-manager-sidebar.is-sidebar-hidden { visibility: hidden; pointer-events: none !important; }
-      .zapia-manager-sidebar.is-minimized .zapia-manager-minimize-trigger { font-size: 20px; padding: 0 6px; color: #d5dbda; }
-      .zapia-manager-sidebar.is-minimized { height: auto !important; overflow: visible; border: 0; background: transparent; pointer-events: none !important; }
-      .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading { justify-content: flex-end; min-block-size: 28px; padding: 4px 12px; }
+      .zapia-manager-sidebar.is-minimized { height: auto !important; overflow: visible; border: 0; border-right: 1px solid transparent; background: transparent; pointer-events: none !important; }
+      .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading { justify-content: flex-end; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading-copy,
       .zapia-manager-sidebar.is-minimized .zapia-manager-settings-trigger { display: none; }
       .zapia-manager-sidebar.is-minimized .zapia-manager-panel-heading-actions,
@@ -2911,13 +2904,15 @@
       .zapia-manager-panel-heading-copy { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
       .zapia-manager-panel-heading-copy strong { font-size: 13px; font-weight: 600; color: #f2f3f3; }
       .zapia-manager-panel-heading-copy span { font-size: 11px; color: #a4abaa; }
-      .zapia-manager-panel-heading { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; }
+      .zapia-manager-panel-heading { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 22px 14px 12px; min-block-size: 32px; }
       .zapia-manager-filters { flex: 0 0 auto; display: flex; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid #292b2b; }
       .zapia-manager-button { border: 1px solid #373b3b; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font: inherit; min-block-size: 28px; padding: 4px 7px; pointer-events: auto !important; }
       .zapia-manager-button:hover:not(:disabled) { background: #2a2e2e; }
       .zapia-manager-button:focus-visible { outline: 2px solid #32bfa6; outline-offset: 2px; }
       .zapia-manager-button:disabled { opacity: .45; cursor: default; }
-      .zapia-manager-settings-trigger, .zapia-manager-minimize-trigger { border: 0; font-size: 13px; color: #b3baba; padding: 2px 4px; min-block-size: 22px; line-height: 1; }
+      .zapia-manager-settings-trigger, .zapia-manager-minimize-trigger { border: 0; font-size: 13px; color: #b3baba; padding: 0; min-block-size: 22px; line-height: 1; }
+      .zapia-manager-minimize-trigger { display: inline-flex; align-items: center; justify-content: center; inline-size: 24px; block-size: 24px; }
+      .zapia-manager-settings-trigger { padding: 2px 4px; }
       .zapia-manager-filter { min-inline-size: 32px; font-size: 12px; min-block-size: 26px; }
       .zapia-manager-filter.is-active { background: #24443d; border-color: #34a38d; }
       .zapia-manager-search { margin-inline-start: auto; min-block-size: 26px; min-inline-size: 28px; }
@@ -3366,7 +3361,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.24',
+    version: '0.5.25',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
