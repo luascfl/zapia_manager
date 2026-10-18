@@ -659,3 +659,13 @@ test('mergeChatList never places a new unpinned chat inside the pinned block', (
   const pinned = manager.mergeChatList(existing, [{ id: 'p1', title: 'P1', pinned: true }, { id: 'p3', title: 'P3', pinned: true }]);
   assert.deepEqual(pinned.map((chat) => chat.id), ['p1', 'p3', 'p2', 'a']);
 });
+
+test('chatRangeIds returns the inclusive range in list order, whichever way it was clicked', () => {
+  const chats = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id }));
+  assert.deepEqual(manager.chatRangeIds(chats, 'b', 'd'), ['b', 'c', 'd']);
+  assert.deepEqual(manager.chatRangeIds(chats, 'd', 'b'), ['b', 'c', 'd']);
+  assert.deepEqual(manager.chatRangeIds(chats, 'c', 'c'), ['c']);
+  // an anchor that left the visible list (filter change) gives no range
+  assert.equal(manager.chatRangeIds(chats, 'zzz', 'c'), null);
+  assert.equal(manager.chatRangeIds(chats, null, 'c'), null);
+});

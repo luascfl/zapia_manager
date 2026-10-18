@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.34
+// @version      0.5.35
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -674,6 +674,7 @@
     matchKey,
     titleFromCacheText,
     reconcileChatList,
+    chatRangeIds,
     buildSupportDiagnosticPayload,
     isUnavailableChatError,
     selectedChats,
@@ -2039,6 +2040,16 @@
   let sidebarTopOffset = restoredState?.sidebarTopOffset ?? null;
   let sidebarHomePending = false;
   let activeCatalogueId = restoredState?.activeCatalogueId ?? null;
+  let selectionAnchorId = null;
+
+  // Ids of the chats between two rows of the visible list, both included (null if either is
+  // not in the list, e.g. after a filter change).
+  function chatRangeIds(chats, anchorId, targetId) {
+    const from = chats.findIndex((chat) => chat.id === anchorId);
+    const to = chats.findIndex((chat) => chat.id === targetId);
+    if (from < 0 || to < 0) return null;
+    return chats.slice(Math.min(from, to), Math.max(from, to) + 1).map((chat) => chat.id);
+  }
   let activeCatalogueUrl = restoredState?.activeCatalogueUrl ?? location.href;
   for (const id of restoredState?.selection ?? []) selectedChatIds.add(id);
 
@@ -2738,15 +2749,42 @@
       select.checked = selectedChatIds.has(chat.id);
       select.disabled = busy;
       select.setAttribute('aria-label', `Select ${chat.title}`);
-      select.addEventListener('change', () => {
-        if (select.checked) selectedChatIds.add(chat.id);
-        else selectedChatIds.delete(chat.id);
+      const selectRange = (checked) => {
+        const ids = chatRangeIds(chats, selectionAnchorId, chat.id);
+        if (!ids) return false;
+        for (const id of ids) {
+          if (checked) selectedChatIds.add(id);
+          else selectedChatIds.delete(id);
+        }
+        return true;
+      };
+      select.addEventListener('click', (event) => {
+        const checked = select.checked;
+        if (!(event.shiftKey && selectRange(checked))) {
+          if (checked) selectedChatIds.add(chat.id);
+          else selectedChatIds.delete(chat.id);
+          selectionAnchorId = chat.id;
+        }
         renderManagerPanel();
+      });
+      // Shift+click must extend the selection, not select the text of the rows in between.
+      option.addEventListener('mousedown', (event) => {
+        if (event.shiftKey) event.preventDefault();
       });
       const open = button(chat.title, `Open ${chat.title}`, () => openCatalogueChat(chat.id));
       open.removeAttribute('title');
       open.classList.add('zapia-manager-chat-title');
       open.disabled = busy;
+      open.addEventListener('click', (event) => {
+        if (!event.shiftKey) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!selectRange(true)) {
+          selectedChatIds.add(chat.id);
+          selectionAnchorId = chat.id;
+        }
+        renderManagerPanel();
+      }, true);
       if (chat.id === activeCatalogueId) open.setAttribute('aria-current', 'page');
       const menu = button('⋯', `More actions for ${chat.title}`, () => openRowMenu(menu, chat));
       menu.classList.add('zapia-manager-chat-menu');
@@ -2794,6 +2832,7 @@
       );
       const clear = button('Clear selection', 'Clear chat selection', () => {
         selectedChatIds.clear();
+        selectionAnchorId = null;
         deletionQueue = [];
         renderManagerPanel();
       });
@@ -3695,7 +3734,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.34',
+    version: '0.5.35',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
