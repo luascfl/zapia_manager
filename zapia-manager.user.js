@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.42
+// @version      0.5.43
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -1580,10 +1580,11 @@
     return applyRename(row, (title) => withPrefix(title, prefix));
   }
 
-  // A button over the open chat that renames it to the id its latest message mentions.
-  // The conversation is drawn on a canvas, so the number itself cannot be a link; the button
-  // appears just above the composer, on the right edge of the message column.
+  // A control over the open chat that applies the latest suggested title or id.
+  // It appears just above the composer, on the right edge of the message column.
+  // A dismissed suggestion stays hidden for this page session unless its target changes.
   let chatIdButton = null;
+  const dismissedChatIdSuggestions = new Set();
   let titleSuggestion = null;
   let suggestionRequestKey = '';
   let suggestionInFlight = false;
@@ -1655,13 +1656,22 @@
       return;
     }
     const action = suggested ? { kind: 'title', value: suggested } : { kind: 'id', value: idWanted };
+    const actionKey = `${route}|${action.kind}|${action.value}`;
+    if (dismissedChatIdSuggestions.has(actionKey)) {
+      removeChatIdButton();
+      return;
+    }
     if (!chatIdButton) {
-      chatIdButton = document.createElement('button');
-      chatIdButton.type = 'button';
+      chatIdButton = document.createElement('div');
       chatIdButton.className = 'zapia-manager-chat-id';
       chatIdButton.dataset.zapiaManagerControl = 'true';
       protectManagedSurface(chatIdButton);
-      chatIdButton.addEventListener('click', async (event) => {
+
+      const apply = document.createElement('button');
+      apply.type = 'button';
+      apply.className = 'zapia-manager-chat-id-apply';
+      apply.dataset.zapiaManagerControl = 'true';
+      apply.addEventListener('click', async (event) => {
         event.preventDefault();
         const { kind, value } = chatIdButton?.dataset ?? {};
         if (!value) return;
@@ -1673,16 +1683,37 @@
           toast(error.message, 'error');
         }
       });
+
+      const dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.className = 'zapia-manager-chat-id-dismiss';
+      dismiss.dataset.zapiaManagerControl = 'true';
+      dismiss.textContent = '×';
+      dismiss.title = 'Dismiss this rename suggestion';
+      dismiss.setAttribute('aria-label', 'Dismiss this rename suggestion');
+      dismiss.addEventListener('click', (event) => {
+        event.preventDefault();
+        const { route: currentRoute, kind, value } = chatIdButton?.dataset ?? {};
+        if (currentRoute && kind && value) {
+          dismissedChatIdSuggestions.add(`${currentRoute}|${kind}|${value}`);
+        }
+        removeChatIdButton();
+      });
+
+      chatIdButton.append(apply, dismiss);
       document.body.append(chatIdButton);
     }
+    chatIdButton.dataset.route = route;
     chatIdButton.dataset.kind = action.kind;
     chatIdButton.dataset.value = action.value;
-    chatIdButton.disabled = chatActionDepth > 0;
+    const disabled = chatActionDepth > 0;
+    chatIdButton.querySelector('.zapia-manager-chat-id-apply').disabled = disabled;
     const shown = action.value.length > 46 ? `${action.value.slice(0, 45)}…` : action.value;
     const label = action.kind === 'title' ? `Rename chat to "${shown}"` : `Rename chat to [${action.value}]`;
-    if (chatIdButton.textContent !== label) {
-      chatIdButton.textContent = label;
-      chatIdButton.title = action.kind === 'title'
+    const apply = chatIdButton.querySelector('.zapia-manager-chat-id-apply');
+    if (apply.textContent !== label) {
+      apply.textContent = label;
+      apply.title = action.kind === 'title'
         ? `Use the title the assistant suggested: ${action.value}`
         : `Set the id of this chat to [${action.value}], keeping its emoji prefix`;
     }
@@ -3389,12 +3420,15 @@
       .zapia-manager-toast { position: fixed; z-index: 2147483647 !important; right: 16px; bottom: 16px; max-inline-size: min(420px, calc(100vw - 32px)); padding: 10px; border-radius: 6px; background: #222; color: #fff; font: 14px system-ui, sans-serif; pointer-events: auto !important; }
       .zapia-manager-toast-error { background: #9f1d1d; }
       .zapia-manager-toast-warning { background: #7b5600; }
+      .zapia-manager-chat-id { position: fixed; z-index: 2147483647 !important; display: flex; overflow: hidden; max-inline-size: min(420px, calc(100vw - 32px)); border: 1px solid #31b8a4; border-radius: 999px; background: #1f554e; box-shadow: 0 2px 0 #000; pointer-events: auto !important; }
+      .zapia-manager-chat-id-apply, .zapia-manager-chat-id-dismiss { border: 0; background: transparent; color: #fff; font: 600 14px system-ui, sans-serif; cursor: pointer; }
+      .zapia-manager-chat-id-apply { overflow: hidden; padding: 8px 12px; text-overflow: ellipsis; white-space: nowrap; }
+      .zapia-manager-chat-id-apply:disabled { cursor: wait; opacity: .6; }
+      .zapia-manager-chat-id-dismiss { flex: 0 0 32px; border-inline-start: 1px solid rgba(255,255,255,.28); font-size: 22px; line-height: 1; }
+      .zapia-manager-chat-id-dismiss:hover, .zapia-manager-chat-id-dismiss:focus-visible { background: rgba(0,0,0,.22); outline: 0; }
       .zapia-manager-stale-notice { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 11px; background: #3a2e12; color: #f0d9a0; border-bottom: 1px solid #292b2b; }
       .zapia-manager-stale-notice span { flex: 1; min-width: 0; }
       .zapia-manager-copy-context { grid-column: 1 / -1; }
-      .zapia-manager-chat-id { position: fixed; z-index: 2147483646; padding: 5px 11px; border: 1px solid #34a38d; border-radius: 14px; background: #1c3a34; color: #e9fffa; font: 600 12px/1.2 Inter, system-ui, sans-serif; cursor: pointer; pointer-events: auto !important; box-shadow: 0 4px 14px #0007; }
-      .zapia-manager-chat-id:hover:not(:disabled) { background: #24544a; }
-      .zapia-manager-chat-id:disabled { opacity: .5; cursor: default; }
       .zapia-manager-settings input[type="checkbox"] { inline-size: auto; justify-self: start; }
       .zapia-manager-context-dialog { inline-size: min(640px, calc(100vw - 32px)); }
       .zapia-manager-context-text { box-sizing: border-box; inline-size: 100%; block-size: min(50vh, 320px); border: 1px solid #454d4b; border-radius: 5px; background: #242828; color: #f2f3f3; font: 12px/1.4 ui-monospace, monospace; padding: 8px; resize: none; }
@@ -4072,7 +4106,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.42',
+    version: '0.5.43',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
