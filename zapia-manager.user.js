@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.43
+// @version      0.5.44
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -134,6 +134,11 @@
       )
       .replace(/\s+\d+\s+não\s+lidas?$/iu, '')
       .trim();
+  }
+
+  function browserTabTitle(chatTitle) {
+    const title = cleanChatTitle(normalizeSpace(chatTitle)).slice(0, 120);
+    return title ? `${title} | Zapia` : 'Zapia';
   }
 
   function configuredPrefixes() {
@@ -736,6 +741,7 @@
     rectanglesOverlap,
     selectRootChatRows,
     cleanChatTitle,
+    browserTabTitle,
     chatMatchesFilter,
     filterChats,
     normalizeSearchText,
@@ -1109,6 +1115,9 @@
   }
 
   function getActiveChatTitleForBrowserTab() {
+    const headerTitle = currentChatHeaderTitle();
+    if (headerTitle) return headerTitle.slice(0, 120);
+
     const prefix = 'Informações do chat';
 
     const candidates = [
@@ -1133,19 +1142,13 @@
 
     if (!candidates.length) return '';
 
-    const title = cleanChatTitle(
+    return cleanChatTitle(
       candidates[0].slice(prefix.length),
-    ).trim();
-
-    return title.slice(0, 120);
+    ).trim().slice(0, 120);
   }
 
   function syncBrowserTabTitle() {
-    const chatTitle = getActiveChatTitleForBrowserTab();
-
-    const nextTitle = chatTitle
-      ? `${chatTitle} | Zapia`
-      : 'Zapia';
+    const nextTitle = browserTabTitle(getActiveChatTitleForBrowserTab());
 
     if (document.title !== nextTitle) {
       document.title = nextTitle;
@@ -4106,7 +4109,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.43',
+    version: '0.5.44',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

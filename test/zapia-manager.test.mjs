@@ -149,6 +149,13 @@ test('chat titles drop the unread counter so identities stay stable', () => {
   assert.equal(manager.stripManagedPrefix('✔️ Caso Mourad'), 'Caso Mourad');
 });
 
+test('browser tab title follows the active chat and falls back outside a chat', () => {
+  assert.equal(manager.browserTabTitle('Currículos Reactive Resume'), 'Currículos Reactive Resume | Zapia');
+  assert.equal(manager.browserTabTitle('  Currículos Reactive Resume  '), 'Currículos Reactive Resume | Zapia');
+  assert.equal(manager.browserTabTitle(''), 'Zapia');
+  assert.equal(manager.browserTabTitle('Chat 2 não lidas'), 'Chat | Zapia');
+});
+
 test('Radar with an unread counter and the notifications button are navigation, not chats', () => {
   assert.equal(manager.isNavigationActionLabel('Radar 4 não lidas'), true);
   assert.equal(manager.isNavigationActionLabel('Abrir notificações'), true);
