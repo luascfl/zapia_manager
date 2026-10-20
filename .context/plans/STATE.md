@@ -426,5 +426,4 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 
 - Pedido do usuário: cada guia aberta do Zapia deve exibir `[título do chat] | Zapia`.
 - Implementação: o sincronizador existente agora prioriza o título do cabeçalho do chat aberto, normaliza contadores de não lidas e só usa o rótulo semântico `Informações do chat` como fallback. Fora de um chat, o título volta a `Zapia`.
-- Validação local: `node --check zapia-manager.user.js` passou; `node --test test/zapia-manager.test.mjs` passou com 61 testes, incluindo os títulos com chat, contador e estado sem chat. A versão 0.5.44 foi salva no Tampermonkey.
-- Limite observado: após reiniciar o Chrome persistente, a página recarregada do Zapia carregou as conversas e a árvore semântica, mas não expôs `window.__zapiaManager`; portanto a troca visual da guia ainda não foi observada nesta carga. Investigar a injeção do Tampermonkey se continuar ausente após a próxima recarga.
+- Validação: `node --check zapia-manager.user.js` passou; `node --test test/zapia-manager.test.mjs` passou com 61 testes, incluindo os títulos com chat, contador e estado sem chat. A versão 0.5.44 foi salva no Tampermonkey. O hot reload na guia autenticada confirmou `💬 Assistente de WhatsApp | Zapia`, `🟡 Outlook | Zapia` e `🟡 Zotero | Zapia` depois de abrir cada chat pelo painel.
