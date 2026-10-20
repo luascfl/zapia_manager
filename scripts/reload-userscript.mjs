@@ -26,6 +26,7 @@ if (matches.length !== 1) {
   throw new Error(`Expected one Zapia tab, found ${matches.length}. Choose its exact CDP id with --target.`);
 }
 const target = matches[0];
+const isChatInfo = new URL(target.url).pathname === '/chat-info';
 const socket = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
   socket.addEventListener('open', resolve, { once: true });
@@ -114,7 +115,9 @@ try {
     await waitForState(`document.querySelector('flutter-view') && document.readyState !== 'loading'`);
   }
   await evaluate(source);
-  await waitForState(`document.querySelector('[data-zapia-manager-panel]')`);
+  await waitForState(isChatInfo
+    ? `document.querySelectorAll('flt-semantics').length > 10`
+    : `document.querySelector('[data-zapia-manager-panel]')`);
   const after = await evaluate(`({
     origin: performance.timeOrigin,
     version: window.__zapiaManager.version,
@@ -126,6 +129,7 @@ try {
     target: target.id,
     version: after.version,
     elapsedMs: Math.round(performance.now() - started),
+    page: isChatInfo ? 'chat-info' : 'chat',
     documentReloaded: before.origin !== after.origin,
     ...after.status,
     panels: after.panels,

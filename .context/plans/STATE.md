@@ -428,8 +428,8 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Implementação: o sincronizador existente agora prioriza o título do cabeçalho do chat aberto, normaliza contadores de não lidas e só usa o rótulo semântico `Informações do chat` como fallback. Fora de um chat, o título volta a `Zapia`.
 - Validação: `node --check zapia-manager.user.js` passou; `node --test test/zapia-manager.test.mjs` passou com 61 testes, incluindo os títulos com chat, contador e estado sem chat. A versão 0.5.44 foi salva no Tampermonkey. O hot reload na guia autenticada confirmou `💬 Assistente de WhatsApp | Zapia`, `🟡 Outlook | Zapia` e `🟡 Zotero | Zapia` depois de abrir cada chat pelo painel.
 
-## Copiar título em informações do chat, 0.5.45, 2026-10-20
+## Copiar título em informações do chat, 0.5.46, 2026-10-20
 
 - Pedido do usuário: clicar no título do cabeçalho em `/chat-info` copia o nome do chat.
 - Implementação: a rota de informações é distinguida da conversa normal; o listener em captura aceita apenas o nó semântico do título no cabeçalho, impede a propagação desse clique e usa a área de transferência com confirmação visual. O botão Voltar e o restante da página não são afetados.
-- Validação: `node --check zapia-manager.user.js` passou; `node --test test/zapia-manager.test.mjs` passou com 62 testes. Clique real no título `📅 Assistente de agendamento e textos acadêmicos - Google Agenda + Whatsapp + Google Drive` devolveu exatamente esse texto da área de transferência.
+- Validação: `node --check zapia-manager.user.js` passou; `node --test test/zapia-manager.test.mjs` passou com 62 testes. Clique real no título `📅 Assistente de agendamento e textos acadêmicos - Google Agenda + Whatsapp + Google Drive` devolveu exatamente esse texto da área de transferência. A instalação do Tampermonkey foi substituída pelo fonte limpo 0.5.46, com 147 KB.
