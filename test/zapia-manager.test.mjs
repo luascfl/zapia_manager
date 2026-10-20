@@ -156,6 +156,12 @@ test('browser tab title follows the active chat and falls back outside a chat', 
   assert.equal(manager.browserTabTitle('Chat 2 não lidas'), 'Chat | Zapia');
 });
 
+test('chat information route is distinguished from the chat route', () => {
+  assert.equal(manager.isChatInfoPath('/chat-info'), true);
+  assert.equal(manager.isChatInfoPath('/chat'), false);
+  assert.equal(manager.isChatInfoPath('/chat-info/other'), false);
+});
+
 test('Radar with an unread counter and the notifications button are navigation, not chats', () => {
   assert.equal(manager.isNavigationActionLabel('Radar 4 não lidas'), true);
   assert.equal(manager.isNavigationActionLabel('Abrir notificações'), true);

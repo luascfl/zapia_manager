@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.44
+// @version      0.5.45
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -139,6 +139,10 @@
   function browserTabTitle(chatTitle) {
     const title = cleanChatTitle(normalizeSpace(chatTitle)).slice(0, 120);
     return title ? `${title} | Zapia` : 'Zapia';
+  }
+
+  function isChatInfoPath(pathname) {
+    return pathname === '/chat-info';
   }
 
   function configuredPrefixes() {
@@ -742,6 +746,7 @@
     selectRootChatRows,
     cleanChatTitle,
     browserTabTitle,
+    isChatInfoPath,
     chatMatchesFilter,
     filterChats,
     normalizeSearchText,
@@ -1470,6 +1475,36 @@
     document.body.append(notice);
 
     later(() => notice.remove(), 4500);
+  }
+
+  function chatInfoTitleNode() {
+    if (!isChatInfoPath(location.pathname)) return null;
+    const navRight = getChatViewport()?.nav.getBoundingClientRect().right ?? 280;
+    return [...document.querySelectorAll('flt-semantics')]
+      .find((node) => {
+        if (!isVisible(node) || node.closest('[data-zapia-manager-control]')) return false;
+        const rect = node.getBoundingClientRect();
+        const title = semanticLabel(node);
+        return rect.left >= navRight
+          && rect.top >= 0
+          && rect.bottom <= 56
+          && title.length >= 3
+          && title !== 'Voltar';
+      }) ?? null;
+  }
+
+  function installChatInfoTitleCopy() {
+    document.addEventListener('click', (event) => {
+      if (!event.isTrusted || !isChatInfoPath(location.pathname)) return;
+      const node = chatInfoTitleNode();
+      if (!node || !event.composedPath().includes(node)) return;
+      const title = semanticLabel(node);
+      event.preventDefault();
+      event.stopPropagation();
+      void navigator.clipboard.writeText(title)
+        .then(() => toast('Chat title copied.'))
+        .catch(() => toast('Could not copy the chat title.', 'error'));
+    }, { capture: true, signal: lifetime.signal });
   }
 
   async function dismissNativeMenu() {
@@ -4086,6 +4121,9 @@
     if (!location.pathname.startsWith('/chat')) return;
 
     enableFlutterSemantics();
+    installChatInfoTitleCopy();
+    if (isChatInfoPath(location.pathname)) return;
+
     installStyles();
     installKeyboardShortcuts();
     installMessageClickGuard();
