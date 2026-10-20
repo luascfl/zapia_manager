@@ -162,6 +162,14 @@ test('chat information route is distinguished from the chat route', () => {
   assert.equal(manager.isChatInfoPath('/chat-info/other'), false);
 });
 
+test('title hit testing is inclusive only inside the title rectangle', () => {
+  const rect = { left: 680, right: 1420, top: 16, bottom: 40 };
+  assert.equal(manager.pointInRect(rect, 680, 16), true);
+  assert.equal(manager.pointInRect(rect, 1420, 40), true);
+  assert.equal(manager.pointInRect(rect, 679, 28), false);
+  assert.equal(manager.pointInRect(rect, 900, 41), false);
+});
+
 test('Radar with an unread counter and the notifications button are navigation, not chats', () => {
   assert.equal(manager.isNavigationActionLabel('Radar 4 não lidas'), true);
   assert.equal(manager.isNavigationActionLabel('Abrir notificações'), true);

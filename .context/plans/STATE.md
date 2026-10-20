@@ -433,3 +433,10 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Pedido do usuário: clicar no título do cabeçalho em `/chat-info` copia o nome do chat.
 - Implementação: a rota de informações é distinguida da conversa normal; o listener em captura aceita apenas o nó semântico do título no cabeçalho, impede a propagação desse clique e usa a área de transferência com confirmação visual. O botão Voltar e o restante da página não são afetados.
 - Validação: `node --check zapia-manager.user.js` passou; `node --test test/zapia-manager.test.mjs` passou com 62 testes. Clique real no título `📅 Assistente de agendamento e textos acadêmicos - Google Agenda + Whatsapp + Google Drive` devolveu exatamente esse texto da área de transferência. A instalação do Tampermonkey foi substituída pelo fonte limpo 0.5.46, com 147 KB.
+
+## Cópia de título no chat-info corrigida, 0.5.49, 2026-10-20
+
+- Relato: clicar em `💬 Assistente de WhatsApp` na tela de informações não copiava nem mostrava confirmação, e acabava abrindo a conversa.
+- Causa: a navegação do Flutter acontece em `pointerdown`, antes do listener anterior de `click`; a rota `/chat-info` também retornava antes de instalar os estilos do toast. Em alguns contextos a API moderna da área de transferência recusava a cópia.
+- Correção: matches explícitos para `/chat-info`; interceptação no `window` em captura durante `pointerdown`, seguida do bloqueio do `click`; detecção por coordenadas do retângulo visual do título; fallback seguro de cópia por `execCommand`; confirmação verde `✓ Copied` abaixo do título. Os estilos agora são instalados nessa rota.
+- Validação real na URL relatada: o clique permaneceu em `/chat-info`, exibiu `✓ Copied` e colocou exatamente `💬 Assistente de WhatsApp` na área de transferência. `node --check zapia-manager.user.js` e 63 testes Node passaram. Tampermonkey Beta mostra Zapia Manager 0.5.49.

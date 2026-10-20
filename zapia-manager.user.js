@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.46
+// @version      0.5.49
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @match        https://app.zapia.com/chat*
 // @match        https://app.zapia.com/chat/*
+// @match        https://app.zapia.com/chat-info*
+// @match        https://app.zapia.com/chat-info/*
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
@@ -143,6 +145,13 @@
 
   function isChatInfoPath(pathname) {
     return pathname === '/chat-info';
+  }
+
+  function pointInRect(rect, clientX, clientY) {
+    return clientX >= rect.left
+      && clientX <= rect.right
+      && clientY >= rect.top
+      && clientY <= rect.bottom;
   }
 
   function configuredPrefixes() {
@@ -747,6 +756,7 @@
     cleanChatTitle,
     browserTabTitle,
     isChatInfoPath,
+    pointInRect,
     chatMatchesFilter,
     filterChats,
     normalizeSearchText,
@@ -1493,17 +1503,59 @@
       }) ?? null;
   }
 
+  async function copyChatInfoTitle(title) {
+    try {
+      await navigator.clipboard.writeText(title);
+      return;
+    } catch {
+      const source = document.createElement('textarea');
+      source.value = title;
+      source.setAttribute('aria-hidden', 'true');
+      source.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+      document.body.append(source);
+      source.select();
+      const copied = document.execCommand('copy');
+      source.remove();
+      if (!copied) throw new Error('Clipboard unavailable');
+    }
+  }
+
+  function showChatInfoTitleCopied(node) {
+    const rect = node.getBoundingClientRect();
+    const notice = document.createElement('output');
+    notice.className = 'zapia-manager-chat-info-copy-feedback';
+    notice.dataset.zapiaManagerControl = 'true';
+    notice.textContent = '✓ Copied';
+    notice.style.left = `${rect.left + rect.width / 2}px`;
+    notice.style.top = `${rect.bottom + 8}px`;
+    document.body.append(notice);
+    later(() => notice.remove(), 1800);
+  }
+
+  function isChatInfoTitleEvent(event) {
+    if (!event.isTrusted || !isChatInfoPath(location.pathname)) return null;
+    const node = chatInfoTitleNode();
+    return node && pointInRect(node.getBoundingClientRect(), event.clientX, event.clientY)
+      ? node
+      : null;
+  }
+
   function installChatInfoTitleCopy() {
-    document.addEventListener('click', (event) => {
-      if (!event.isTrusted || !isChatInfoPath(location.pathname)) return;
-      const node = chatInfoTitleNode();
-      if (!node || !event.composedPath().includes(node)) return;
-      const title = semanticLabel(node);
+    window.addEventListener('pointerdown', (event) => {
+      const node = isChatInfoTitleEvent(event);
+      if (!node) return;
       event.preventDefault();
-      event.stopPropagation();
-      void navigator.clipboard.writeText(title)
-        .then(() => toast('Chat title copied.'))
+      event.stopImmediatePropagation();
+      const title = semanticLabel(node);
+      void copyChatInfoTitle(title)
+        .then(() => showChatInfoTitleCopied(node))
         .catch(() => toast('Could not copy the chat title.', 'error'));
+    }, { capture: true, signal: lifetime.signal });
+
+    window.addEventListener('click', (event) => {
+      if (!isChatInfoTitleEvent(event)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
     }, { capture: true, signal: lifetime.signal });
   }
 
@@ -3458,6 +3510,7 @@
       .zapia-manager-toast { position: fixed; z-index: 2147483647 !important; right: 16px; bottom: 16px; max-inline-size: min(420px, calc(100vw - 32px)); padding: 10px; border-radius: 6px; background: #222; color: #fff; font: 14px system-ui, sans-serif; pointer-events: auto !important; }
       .zapia-manager-toast-error { background: #9f1d1d; }
       .zapia-manager-toast-warning { background: #7b5600; }
+      .zapia-manager-chat-info-copy-feedback { position: fixed; z-index: 2147483647 !important; transform: translateX(-50%); border: 1px solid #44c29d; border-radius: 999px; background: #164f42; color: #e9fffa; box-shadow: 0 4px 14px #0009; padding: 6px 10px; font: 600 12px system-ui, sans-serif; pointer-events: none !important; }
       .zapia-manager-chat-id { position: fixed; z-index: 2147483647 !important; display: flex; overflow: hidden; max-inline-size: min(420px, calc(100vw - 32px)); border: 1px solid #31b8a4; border-radius: 999px; background: #1f554e; box-shadow: 0 2px 0 #000; pointer-events: auto !important; }
       .zapia-manager-chat-id-apply, .zapia-manager-chat-id-dismiss { border: 0; background: transparent; color: #fff; font: 600 14px system-ui, sans-serif; cursor: pointer; }
       .zapia-manager-chat-id-apply { overflow: hidden; padding: 8px 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -4121,10 +4174,10 @@
     if (!location.pathname.startsWith('/chat')) return;
 
     enableFlutterSemantics();
+    installStyles();
     installChatInfoTitleCopy();
     if (isChatInfoPath(location.pathname)) return;
 
-    installStyles();
     installKeyboardShortcuts();
     installMessageClickGuard();
     installRadarProtection();
@@ -4147,7 +4200,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.46',
+    version: '0.5.49',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
