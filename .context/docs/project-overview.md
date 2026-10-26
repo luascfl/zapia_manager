@@ -26,6 +26,7 @@ A dependency-free userscript for Tampermonkey or Violentmonkey that manages Zapi
 - `zapia-manager.user.js`, production userscript.
 - `test/zapia-manager.test.mjs`, Node contract tests.
 - `scripts/reload-userscript.mjs`, development-only source replacement through CDP; preserves the catalogue and UI state without reloading Zapia.
+- `scripts/zapia-cli.mjs` and `test/zapia-cli.test.mjs`, agent-facing CLI for listing, reading and sending Zapia messages through the logged-in tab; see the development workflow.
 
 ## Runtime and boundaries
 
