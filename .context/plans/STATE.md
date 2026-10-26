@@ -440,3 +440,11 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Causa: a navegação do Flutter acontece em `pointerdown`, antes do listener anterior de `click`; a rota `/chat-info` também retornava antes de instalar os estilos do toast. Em alguns contextos a API moderna da área de transferência recusava a cópia.
 - Correção: matches explícitos para `/chat-info`; interceptação no `window` em captura durante `pointerdown`, seguida do bloqueio do `click`; detecção por coordenadas do retângulo visual do título; fallback seguro de cópia por `execCommand`; confirmação verde `✓ Copied` abaixo do título. Os estilos agora são instalados nessa rota.
 - Validação real na URL relatada: o clique permaneceu em `/chat-info`, exibiu `✓ Copied` e colocou exatamente `💬 Assistente de WhatsApp` na área de transferência. `node --check zapia-manager.user.js` e 63 testes Node passaram. Tampermonkey Beta mostra Zapia Manager 0.5.49.
+
+## Separação do CLI de automação, 2026-10-26
+
+- Pedido do usuário: o CLI do Zapia não é userscript e deve pertencer ao hub `browser-automation`, fora do Zapia Manager.
+- Movidos o código `scripts/zapia-cli.mjs`, os testes e a referência operacional para `~/.omp/agent/managed-skills/browser-automation/`. Removidos os comandos e a entrada do CLI dos guias deste repositório; sem cópia ou encaminhador no caminho antigo.
+- O userscript e seu injetor de desenvolvimento permanecem neste repositório, sem alteração de comportamento.
+- Validação: 68 testes passaram, sendo 5 do CLI no novo destino e 63 do Manager. A execução real de `list --limit 1`, a partir de `/home/lucas`, terminou com código 0 e retornou os campos esperados da conversa. Nenhuma mensagem foi enviada nesta migração.
+
