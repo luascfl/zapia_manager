@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.50
+// @version      0.5.51
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -771,8 +771,15 @@
       && first.top < second.bottom && first.bottom > second.top;
   }
 
+  function existingThreadUrl(currentUrl, threadId) {
+    const url = new URL('/chat', new URL(currentUrl).origin);
+    url.searchParams.set('pulsusNumber', threadId);
+    return url.href;
+  }
+
 
   const testApi = {
+    existingThreadUrl,
     normalizeSpace,
     stripManagedPrefix,
     withPrefix,
@@ -3324,11 +3331,10 @@
   // title before anything runs; otherwise the sidebar path is used. Returns the row to act
   // on, or null when the chat is already open.
   async function navigateToThread(threadId, title, { settle = 0 } = {}) {
-    if (new URL(location.href).searchParams.get('pulsusNumber') !== threadId) {
+    const targetUrl = existingThreadUrl(location.href, threadId);
+    if (location.href !== targetUrl) {
       await dismissNativeMenu();
-      const url = new URL(location.href);
-      url.searchParams.set('pulsusNumber', threadId);
-      history.pushState(null, '', `${url.pathname}${url.search}`);
+      history.pushState(null, '', targetUrl);
       window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
     }
     const ready = () => {
@@ -4304,7 +4310,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.50',
+    version: '0.5.51',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,

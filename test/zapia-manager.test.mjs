@@ -5,6 +5,27 @@ import test from 'node:test';
 const require = createRequire(import.meta.url);
 const manager = require('../zapia-manager.user.js');
 
+test('existing thread routes discard new-chat state for the same exact thread', () => {
+  const threadId = 'ape@89b287d5-27a3-4c21-9d22-d83eacc04daf';
+  const contaminated = `https://app.zapia.com/chat?pulsusNumber=${encodeURIComponent(threadId)}&isNewChat=true&draft=hello#composer`;
+  const expected = `https://app.zapia.com/chat?pulsusNumber=${encodeURIComponent(threadId)}`;
+
+  assert.equal(manager.existingThreadUrl(contaminated, threadId), expected);
+  assert.notEqual(contaminated, expected);
+});
+
+test('existing thread routes are canonical from origin and preserve the exact ID', () => {
+  const threadId = 'ape@89b287d5-27a3-4c21-9d22-d83eacc04daf';
+  const expected = `https://app.zapia.com/chat?pulsusNumber=${encodeURIComponent(threadId)}`;
+
+  assert.equal(manager.existingThreadUrl(expected, threadId), expected);
+  assert.equal(
+    manager.existingThreadUrl('https://app.zapia.com/new-chat?isNewChat=true#composer', threadId),
+    expected,
+  );
+});
+
+
 test('managed prefixes are idempotent and mutually exclusive', () => {
   assert.equal(manager.withPrefix('Alice', '✔ '), '✔ Alice');
   assert.equal(manager.withPrefix('✔ Alice', '✔ '), '✔ Alice');
