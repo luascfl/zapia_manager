@@ -448,3 +448,13 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - O userscript e seu injetor de desenvolvimento permanecem neste repositório, sem alteração de comportamento.
 - Validação: 68 testes passaram, sendo 5 do CLI no novo destino e 63 do Manager. A execução real de `list --limit 1`, a partir de `/home/lucas`, terminou com código 0 e retornou os campos esperados da conversa. Nenhuma mensagem foi enviada nesta migração.
 
+
+## Compatibilidade com sidebar sem semântica nativa, 0.5.50
+
+- Relato: após atualização do Zapia, o userscript habilitado não mostrava o catálogo. Reprodução autenticada: `hasApiSession=true`, três páginas API completas e zero chats no Manager; a sidebar era desenhada no canvas sem `Menu de navegação` nem linhas semânticas, inclusive com o userscript desativado.
+- Correção: o catálogo passa a iniciar pela cadeia API completa mesmo sem linhas nativas. O layout mantém o caminho semântico anterior e, na versão nova, reconhece o divisor Flutter vazio e de altura total, com contêiner de conteúdo adjacente. A largura vem da geometria validada; o topo reserva 320px para a navegação e a base preserva a área do perfil. Sem divisor desktop válido, o painel fica oculto.
+- A atualização do catálogo usa a API quando não há navegação semântica, sem rolar o canvas. Abrir chat e o item Rename do menu próprio usam a rota exata do thread antes das ações nativas; mantidas as confirmações e guardas de identidade/exclusão.
+- Validação: sintaxe Node aprovada e 65 testes passaram. Smoke autenticado confirmou 108 chats, 20 títulos no filtro de IDs, restauração do filtro anterior, atualização sem eventos wheel e abertura com cabeçalho nativo correspondente. O diálogo de renomeio foi aberto e cancelado sem salvar; nenhuma conversa foi renomeada ou excluída.
+- Revisão independente encontrou uma remoção indevida de `PROFILE_BAR_PADDING` no caminho anterior; a constante de 20px foi restaurada antes da publicação.
+- Tampermonkey Beta confirmou 0.5.50 instalada. Um reload real, sem injeção de desenvolvimento, carregou automaticamente os 108 chats, um painel e um estilo, com zero exceções JavaScript observadas. A versão instalada abriu o chat Outlook pela linha do catálogo e confirmou a rota e o cabeçalho corretos.
+
