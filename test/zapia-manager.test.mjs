@@ -77,6 +77,19 @@ test('offscreen or closing native drawers never leave a floating catalogue', () 
   assert.equal(manager.sidebarPlacement({ left: 0, right: 280, top: 0, bottom: 768, width: 280 }, 286, 708, 240, 768), null);
 });
 
+test('Flutter divider geometry accepts only a full-height desktop sidebar splitter', () => {
+  const divider = { left: 275, right: 285, top: 0, bottom: 768, width: 10 };
+  assert.deepEqual(manager.sidebarDividerGeometry(divider, 1366, 768), {
+    left: 0, top: 0, right: 280, bottom: 768, width: 280, height: 768,
+  });
+  assert.equal(manager.sidebarDividerGeometry({ ...divider, top: 2 }, 1366, 768), null);
+  assert.equal(manager.sidebarDividerGeometry({ ...divider, bottom: 766 }, 1366, 768), null);
+  assert.equal(manager.sidebarDividerGeometry({ ...divider, width: 5, right: 280 }, 1366, 768), null);
+  assert.equal(manager.sidebarDividerGeometry(divider, 639, 768), null);
+  assert.equal(manager.sidebarDividerGeometry({ ...divider, left: -1, right: 9 }, 1366, 768), null);
+  assert.equal(manager.sidebarDividerGeometry({ ...divider, right: 320 }, 1366, 768), null);
+});
+
 test('native menus hide the catalogue only when their rectangles actually overlap', () => {
   const sidebar = { left: 0, right: 280, top: 286, bottom: 708 };
   assert.equal(manager.rectanglesOverlap(sidebar, { left: 1100, right: 1320, top: 60, bottom: 260 }), false);
@@ -686,6 +699,21 @@ test('reconcileChatList gives every server thread its own entry and keeps same-t
   // deleting the first twin promotes the second to the plain id and clears the flag
   const after = manager.reconcileChatList(twins, [{ id: '2', label: 'X', pinned: false }, { id: '3', label: 'Y', pinned: false }]);
   assert.deepEqual(after.next.map((chat) => [chat.id, chat.threadId, chat.duplicate]), [['text:X', '2', false], ['text:Y', '3', false]]);
+});
+
+test('cold API catalogue reconciliation preserves exact thread identity and pinning', () => {
+  const { next, dropped } = manager.reconcileChatList([], [
+    { id: 'thread-pinned', label: 'Inbox', pinned: true },
+    { id: 'thread-a', label: 'Same title', pinned: false },
+    { id: 'thread-b', label: 'Same title', pinned: false },
+  ]);
+
+  assert.deepEqual(next.map((chat) => [chat.id, chat.threadId, chat.pinned, Boolean(chat.duplicate)]), [
+    ['text:Inbox', 'thread-pinned', true, false],
+    ['text:Same title', 'thread-a', false, true],
+    ['text:Same title#2', 'thread-b', false, true],
+  ]);
+  assert.deepEqual(dropped, []);
 });
 
 test('mergeChatList never places a new unpinned chat inside the pinned block', () => {

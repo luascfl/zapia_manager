@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zapia Manager
 // @namespace    https://github.com/luascfl/userscripts
-// @version      0.5.49
+// @version      0.5.50
 // @description  Enhance Zapia's sidebar with a searchable chat catalogue, filters, selection, native actions and configurable shortcuts.
 // @updateURL    https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
 // @downloadURL  https://raw.githubusercontent.com/luascfl/zapia_manager/main/zapia-manager.user.js
@@ -78,6 +78,7 @@
   let catalogueSearchOpen = false;
   let catalogueSearchQuery = '';
   const HEADER_CLIP_TOP = 50;
+  const FALLBACK_SIDEBAR_TOP = 320;
   const PROFILE_SAFE_BOTTOM_GUTTER = 80;
   const PROFILE_BAR_PADDING = 20;
   let observerScheduled = false;
@@ -725,6 +726,38 @@
     );
   }
 
+  // A full-height, narrow Flutter splitter is the only geometry we use when the
+  // native navigation semantics are absent. Its midpoint is the sidebar edge.
+  function sidebarDividerGeometry(rect, width, height) {
+    if (
+      !rect
+      || !Number.isFinite(width)
+      || !Number.isFinite(height)
+      || width < 640
+      || height < 400
+      || !Number.isFinite(rect.left)
+      || !Number.isFinite(rect.right)
+      || !Number.isFinite(rect.top)
+      || !Number.isFinite(rect.bottom)
+      || !Number.isFinite(rect.width)
+      || rect.left < 0
+      || rect.right > width
+      || Math.abs(rect.right - rect.left - rect.width) > 1
+      || rect.width < 6
+      || rect.width > 16
+      || rect.top > 1
+      || rect.bottom < height - 1
+    ) {
+      return null;
+    }
+    const sidebarRight = rect.left + rect.width / 2;
+    if (sidebarRight < 200 || sidebarRight > Math.min(360, width * 0.45)) return null;
+    return {
+      left: 0, top: 0, right: sidebarRight, bottom: height,
+      width: sidebarRight, height,
+    };
+  }
+
   function sidebarPlacement(nav, topOffset, profileTop, width, height) {
     if (!nav || topOffset === null || nav.left < 0 || nav.right > width || nav.width <= 0) return null;
     const top = Math.max(0, nav.top + topOffset);
@@ -738,6 +771,7 @@
       && first.top < second.bottom && first.bottom > second.top;
   }
 
+
   const testApi = {
     normalizeSpace,
     stripManagedPrefix,
@@ -748,6 +782,7 @@
     isChatHeaderControl,
     isChatBodyPoint,
     isNavigationActionLabel,
+    sidebarDividerGeometry,
     sidebarPlacement,
     safeProfileTop,
     pointInChatViewport,
@@ -944,12 +979,53 @@
       || `text:${cleanChatTitle(rawText)}`;
   }
 
+  function fallbackSidebarViewport() {
+    const divider = [...document.querySelectorAll('flt-semantics')].find((node) => {
+      if (
+        node.children.length !== 0
+        || normalizeSpace(node.textContent) !== ''
+        || node.hasAttribute('role')
+        || node.hasAttribute('aria-label')
+      ) {
+        return false;
+      }
+      const navRect = sidebarDividerGeometry(
+        node.getBoundingClientRect(), window.innerWidth, window.innerHeight,
+      );
+      const parent = node.parentElement;
+      if (!navRect || !parent?.matches('flt-semantics')) return false;
+      const parentRect = parent.getBoundingClientRect();
+      const content = [...parent.children].find((child) => {
+        if (child === node) return false;
+        const rect = child.getBoundingClientRect();
+        return rect.left >= navRect.right
+          && rect.left <= navRect.right + 2
+          && rect.top <= 1
+          && rect.bottom >= window.innerHeight - 1;
+      });
+      return parentRect.left <= 1
+        && parentRect.top <= 1
+        && parentRect.right >= window.innerWidth - 1
+        && parentRect.bottom >= window.innerHeight - 1
+        && Boolean(content);
+    });
+    const navRect = divider && sidebarDividerGeometry(
+      divider.getBoundingClientRect(), window.innerWidth, window.innerHeight,
+    );
+    return navRect ? {
+      nav: null,
+      navRect,
+      top: FALLBACK_SIDEBAR_TOP,
+      bottom: safeProfileTop(window.innerHeight, window.innerHeight),
+    } : null;
+  }
+
   function getChatViewport() {
     const nav = document.querySelector(
       'flt-semantics[aria-label="Menu de navegação"]',
     );
 
-    if (!nav) return null;
+    if (!nav) return fallbackSidebarViewport();
 
     const navRect = nav.getBoundingClientRect();
 
@@ -1008,7 +1084,7 @@
 
   function isFlutterChatRow(row, viewport, clip = true) {
     if (
-      !viewport
+      !viewport?.nav
       || !row.matches('flt-semantics[role="button"]')
     ) {
       return false;
@@ -1043,7 +1119,7 @@
   }
 
   function hasChatHoverAction(viewport) {
-    if (!viewport) return false;
+    if (!viewport?.nav) return false;
 
     return [
       ...viewport.nav.querySelectorAll(
@@ -1489,7 +1565,7 @@
 
   function chatInfoTitleNode() {
     if (!isChatInfoPath(location.pathname)) return null;
-    const navRight = getChatViewport()?.nav.getBoundingClientRect().right ?? 280;
+    const navRight = getChatViewport()?.nav?.getBoundingClientRect().right ?? 280;
     return [...document.querySelectorAll('flt-semantics')]
       .find((node) => {
         if (!isVisible(node) || node.closest('[data-zapia-manager-control]')) return false;
@@ -1713,7 +1789,7 @@
 
   function syncChatIdButton() {
     if (lifetime.signal.aborted) return;
-    const navRight = getChatViewport()?.nav.getBoundingClientRect().right ?? 280;
+    const navRight = getChatViewport()?.nav?.getBoundingClientRect().right ?? 280;
     const nodes = [...document.querySelectorAll('flt-semantics')];
     const composerTops = nodes
       .filter((node) => semanticLabel(node).startsWith('Adicionar anexo'))
@@ -2306,7 +2382,7 @@
       // No chat composer means this is not a conversation view (Radar, empty states):
       // every control there is meant to be clicked, so the guard stays out of the way.
       if (!composerTops.length) return;
-      const navRight = getChatViewport()?.nav.getBoundingClientRect().right ?? 280;
+      const navRight = getChatViewport()?.nav?.getBoundingClientRect().right ?? 280;
       if (isChatBodyPoint({
         clientX: event.clientX,
         clientY: event.clientY,
@@ -2440,7 +2516,7 @@
   }
 
   function captureNativeSections(viewport) {
-    if (!viewport) return;
+    if (!viewport?.nav) return;
     for (const marker of viewport.nav.querySelectorAll('flt-semantics[role="button"][aria-expanded]')) {
       const label = semanticLabel(marker);
       if (label !== 'Fixados' && label !== 'Conversas') continue;
@@ -2489,7 +2565,7 @@
     const viewport = getChatViewport();
     const view = document.querySelector('flutter-view');
 
-    if (!viewport || !view) return false;
+    if (!viewport?.nav || !view) return false;
 
     const before = sidebarSignature();
 
@@ -2523,13 +2599,14 @@
   }
 
   function nativeNavigationAtHome(viewport = getChatViewport()) {
-    if (!viewport) return false;
+    if (!viewport?.nav) return false;
     const first = [...viewport.nav.querySelectorAll('flt-semantics[role="button"]')]
       .find((element) => semanticLabel(element) === 'Novo Chat');
     return Boolean(first && first.getBoundingClientRect().top >= viewport.navRect.top + HEADER_CLIP_TOP);
   }
 
   async function scrollSidebarToTop() {
+    if (!getChatViewport()?.nav) return;
     while (!nativeNavigationAtHome()) {
       if (!(await scrollSidebarStep(-SIDEBAR_SCROLL_STEP * 8))) return;
     }
@@ -2542,6 +2619,10 @@
   }
 
   async function findChatRow(id) {
+    if (!getChatViewport()?.nav) {
+      throw new Error(`Zapia did not render chat ${id}.`);
+    }
+
     // The native list loads its next page while it is scrolled, so a row far down can be
     // missing on the first pass; look again before giving up.
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -2576,6 +2657,16 @@
     chatListVersion += 1;
 
     try {
+      if (!getChatViewport()?.nav) {
+        if (apiSession) {
+          chainAttempts = 0;
+          lastThreadListRefresh = 0;
+          await fetchThreadChain();
+          reconcileCatalogue({ allowDuringScan: true });
+        }
+        return;
+      }
+
 
       await scrollSidebarToTop();
 
@@ -2856,8 +2947,8 @@
     const renameItem = button('Rename', 'Rename chat', async () => {
       closeRowMenu();
       await runChatAction(async () => {
-        const row = await findChatRow(chat.id);
-        await activateNativeChat(row);
+        const row = await openChatForAction(chat.id);
+        if (row) await activateNativeChat(row);
         await openCurrentNativeActions();
         const editAction = await waitFor(
           () => visibleMenuAction(MENU_RENAME_ACTION),
@@ -2907,8 +2998,8 @@
     try {
       await runChatAction(async () => {
         try {
-          const row = await findChatRow(id);
-          await activateNativeChat(row);
+          const row = await openChatForAction(id);
+          if (row) await activateNativeChat(row);
         } finally {
           await scrollSidebarToTop();
         }
@@ -3319,7 +3410,13 @@
       if (!chatActionDepth) activeCatalogueId = null;
     }
     const bounds = viewport
-      ? sidebarPlacement(viewport.navRect, sidebarTopOffset, viewport.bottom, innerWidth, innerHeight)
+      ? sidebarPlacement(
+        viewport.navRect,
+        viewport.nav ? sidebarTopOffset : viewport.top - viewport.navRect.top,
+        viewport.bottom,
+        innerWidth,
+        innerHeight,
+      )
       : null;
     const focused = document.activeElement;
     const nativeEntry = focused instanceof Element
@@ -3338,7 +3435,7 @@
         if (panel.style[name] !== value) panel.style[name] = value;
       }
     }
-    if (viewport && !preferences.panel.minimized && !nativeNavigationAtHome(viewport) && !nativeEntry && !isRadarOverlayOpen()
+    if (viewport?.nav && !preferences.panel.minimized && !nativeNavigationAtHome(viewport) && !nativeEntry && !isRadarOverlayOpen()
       && !sidebarHomePending && !chatScanRunning && !chatActionDepth) {
       void scrollSidebarToTop().catch((error) => toast(error.message, 'error')).finally(() => {
         sidebarHomePending = false;
@@ -3362,6 +3459,11 @@
   function mountControls() {
     if (lifetime.signal.aborted) return;
     syncNativeSidebarLayout();
+
+    if (apiSession && !chatScanStarted && !chatScanRunning && chatActionDepth === 0 && !getChatViewport()?.nav) {
+      chatScanStarted = true;
+      void scanAllChats().catch((error) => toast(error.message, 'error'));
+    }
 
     if (
       hasFocusedTextEntry()
@@ -3770,8 +3872,8 @@
     return !keys || keys.has(matchKey(chat.title));
   }
 
-  function reconcileCatalogue() {
-    if (chatScanRunning || chatActionDepth > 0 || !knownChats.length) return;
+  function reconcileCatalogue({ allowDuringScan = false } = {}) {
+    if ((!allowDuringScan && chatScanRunning) || chatActionDepth > 0) return;
     // Zapia delivers the generated title without refetching the list, so ask for it ourselves
     // while a new chat is untitled (every 4 s, at most 40 times).
     if (threadListFromPages([...threadPages.values()]) && !serverLabelKeys()) {
@@ -3793,7 +3895,9 @@
 
     const { next, dropped } = reconcileChatList(knownChats, server.values());
     const signature = (list) => list.map((chat) => `${chat.id}|${chat.pinned}|${chat.threadId ?? ''}|${chat.duplicate ? 1 : 0}`).join('\n');
-    if (!next.length || signature(next) === signature(knownChats)) return;
+    catalogueComplete = true;
+    chatScanStarted = true;
+    if (signature(next) === signature(knownChats)) return;
 
     for (const chat of dropped) retainedTitles.add(chat.title);
     setKnownChats(next);
@@ -4200,7 +4304,7 @@
     later(syncLoop, 500);
   }
   window.__zapiaManager = Object.freeze({
-    version: '0.5.49',
+    version: '0.5.50',
     snapshot: runtimeSnapshot,
     dispose: disposeRuntime,
     refresh: scanAllChats,
