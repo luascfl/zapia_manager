@@ -458,3 +458,11 @@ Local commit `b3472de` contains this story. `git push` on 2026-09-06 was rejecte
 - Revisão independente encontrou uma remoção indevida de `PROFILE_BAR_PADDING` no caminho anterior; a constante de 20px foi restaurada antes da publicação.
 - Tampermonkey Beta confirmou 0.5.50 instalada. Um reload real, sem injeção de desenvolvimento, carregou automaticamente os 108 chats, um painel e um estilo, com zero exceções JavaScript observadas. A versão instalada abriu o chat Outlook pela linha do catálogo e confirmou a rota e o cabeçalho corretos.
 
+
+## Navegação de conversa nova para existente, 0.5.51
+
+- Causa confirmada: a URL preservava `isNewChat=true` ao selecionar uma conversa existente. O endpoint de mensagens respondia 200, mas o Zapia não montava o cabeçalho. Remover apenas o estado transitório, mantendo o mesmo thread, carregou a conversa.
+- Correção: `existingThreadUrl` constrói `/chat?pulsusNumber=<id exato>` a partir da origem. `navigateToThread` compara a URL completa, portanto normaliza também o mesmo ID com query, caminho ou fragmento indevidos. As guardas de título, rota e menu nativo permanecem intactas.
+- Validação: sintaxe aprovada, 67 testes Node passaram e revisão independente sem achados. O smoke confirmou limpeza de `isNewChat`, parâmetros transitórios e hash sem trocar o ID. Tampermonkey confirmou a instalação 0.5.51.
+- Prova em carregamento novo, sem injeção: aba iniciada na URL problemática com `isNewChat=true`, catálogo com 107 chats; clique na conversa relatada limpou a flag, carregou o cabeçalho exato e `Mais ações`, sem toast de erro. Nenhuma mensagem foi enviada, nem conversa renomeada ou excluída.
+
